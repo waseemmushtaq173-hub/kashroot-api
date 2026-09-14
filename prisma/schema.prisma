@@ -1,0 +1,799 @@
+// KashRoot — Prisma Schema
+// Single source of truth for the PostgreSQL data model.
+// Run: npx prisma migrate dev --name init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// RBAC & IDENTITY
+// ============================================================
+
+model User {
+  id                String    @id @default(uuid())
+  email             String?   @unique
+  phone             String?   @unique
+  passwordHash      String    @map("password_hash")
+  mfaEnabled        Boolean   @default(false) @map("mfa_enabled")
+  mfaSecret         Bytes?    @map("mfa_secret") // AES-256 encrypted
+  status            UserStatus @default(PENDING_VERIFICATION)
+  emailVerifiedAt   DateTime? @map("email_verified_at")
+  phoneVerifiedAt   DateTime? @map("phone_verified_at")
+  lastLoginAt       DateTime? @map("last_login_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  userRoles         UserRole[]
+  refreshTokens     RefreshToken[]
+  auditLogsActed    AuditLog[]     @relation("ActorLogs")
+  farmerProfile     FarmerProfile?
+  buyerProfile      BuyerProfile?
+  addresses         Address[]
+  appointmentNotes  AppointmentNote[]
+  orderStatusChanges OrderStatusHistory[]
+  reviewsAuthored   Review[]       @relation("AuthoredReviews")
+  disputesOpened    Dispute[]      @relation("OpenedDisputes")
+
+  @@map("users")
+}
+
+enum UserStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+  DELETED
+
+  @@map("user_status")
+}
+
+model Role {
+  id          String       @id @default(uuid())
+  name        RoleName     @unique
+  userRoles   UserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+enum RoleName {
+  SUPER_ADMIN
+  REGIONAL_ADMIN
+  FARMER
+  BUYER
+  LOGISTICS_PARTNER
+  SUPPORT_MODERATOR
+  SYSTEM
+
+  @@map("role_name")
+}
+
+model UserRole {
+  userId     String   @map("user_id")
+  roleId     String   @map("role_id")
+  regionId   String?  @map("region_id") // scopes REGIONAL_ADMIN
+  assignedAt DateTime @default(now()) @map("assigned_at")
+  assignedBy String?  @map("assigned_by")
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  region Region? @relation(fields: [regionId], references: [id], onDelete: SetNull)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  key         String           @unique // e.g. 'listing:create:own'
+  description String?
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id")
+  permissionId String @map("permission_id")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  tokenHash  String    @map("token_hash") // hashed, never plaintext
+  deviceInfo Json?     @map("device_info")
+  ipAddress  String?   @map("ip_address")
+  issuedAt   DateTime  @default(now()) @map("issued_at")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at") // NULL = valid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  actorUserId String?  @map("actor_user_id")
+  action      String   // e.g. 'kyc:approve', 'user:suspend'
+  targetType  String   @map("target_type") // e.g. 'farmer_profile'
+  targetId    String   @map("target_id")
+  ipAddress   String?  @map("ip_address")
+  deviceInfo  Json?    @map("device_info")
+  metadata    Json?    // before/after snapshot
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  actor User? @relation("ActorLogs", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId, createdAt(sort: Desc)])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}
+
+// ============================================================
+// REGIONS & GEOGRAPHY
+// ============================================================
+
+model Region {
+  id                 String   @id @default(uuid())
+  name               String
+  countryCode        String   @map("country_code")
+  isActive           Boolean  @default(false) @map("is_active")
+  shippingZoneConfig Json?    @map("shipping_zone_config")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  userRoles            UserRole[]
+  addresses            Address[]
+  farmerProfiles       FarmerProfile[]
+  listingsOrigin       Listing[]              @relation("OriginRegion")
+  shippingCapabilities ShippingCapability[]   @relation("DestinationRegion")
+  ordersOrigin         Order[]                @relation("OrderOriginRegion")
+  ordersDestination    Order[]                @relation("OrderDestinationRegion")
+
+  @@map("regions")
+}
+
+model Address {
+  id         String  @id @default(uuid())
+  userId     String  @map("user_id")
+  regionId   String? @map("region_id")
+  line1      String
+  line2      String?
+  city       String
+  postalCode String  @map("postal_code")
+  country    String
+  isDefault  Boolean @default(false) @map("is_default")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  region Region? @relation(fields: [regionId], references: [id])
+  orders Order[]
+
+  @@map("addresses")
+}
+
+// ============================================================
+// FARMER DOMAIN
+// ============================================================
+
+model FarmerProfile {
+  id                 String    @id @default(uuid())
+  userId             String    @unique @map("user_id")
+  displayName        String    @map("display_name")
+  bio                String?
+  originRegionId     String?   @map("origin_region_id")
+  kycStatus          KycStatus @default(PENDING) @map("kyc_status")
+  kycRejectionReason String?   @map("kyc_rejection_reason")
+  kycSubmittedAt     DateTime? @map("kyc_submitted_at")
+  kycReviewedAt      DateTime? @map("kyc_reviewed_at")
+  kycReviewedBy      String?   @map("kyc_reviewed_by")
+  payoutAccountRef   String?   @map("payout_account_ref")
+  trustScore         Decimal   @default(50) @db.Decimal(5, 2) @map("trust_score")
+  noShowCount        Int       @default(0) @map("no_show_count")
+  isFlaggedForReview Boolean   @default(false) @map("is_flagged_for_review")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  originRegion          Region?                @relation(fields: [originRegionId], references: [id])
+  kycDocuments          KycDocument[]
+  certifications        Certification[]
+  listings              Listing[]
+  shippingCapabilities  ShippingCapability[]
+  appointments          Appointment[]          @relation("FarmerAppointments")
+  orders                Order[]                @relation("FarmerOrders")
+  payouts               Payout[]
+  relationships         BuyerFarmerRelationship[]
+  savedByBuyers         SavedFarmer[]
+
+  @@map("farmer_profiles")
+}
+
+enum KycStatus {
+  PENDING
+  UNDER_REVIEW
+  VERIFIED
+  REJECTED
+
+  @@map("kyc_status")
+}
+
+model KycDocument {
+  id               String    @id @default(uuid())
+  farmerProfileId  String    @map("farmer_profile_id")
+  docType          String    @map("doc_type") // 'identity', 'land_proof', 'bank_statement'
+  fileKey          String    @map("file_key")  // S3 object key — never public URL
+  fileSizeBytes    Int?      @map("file_size_bytes")
+  mimeType         String?   @map("mime_type")
+  scanStatus       ScanStatus @default(PENDING) @map("scan_status")
+  uploadedAt       DateTime  @default(now()) @map("uploaded_at")
+  reviewedBy       String?   @map("reviewed_by")
+  reviewedAt       DateTime? @map("reviewed_at")
+
+  farmerProfile FarmerProfile @relation(fields: [farmerProfileId], references: [id], onDelete: Cascade)
+
+  @@map("kyc_documents")
+}
+
+enum ScanStatus {
+  PENDING
+  CLEAN
+  QUARANTINED
+
+  @@map("scan_status")
+}
+
+model Certification {
+  id              String    @id @default(uuid())
+  farmerProfileId String    @map("farmer_profile_id")
+  name            String    // 'Organic', 'GI Tag', 'APEDA'
+  issuingBody     String?   @map("issuing_body")
+  fileKey         String?   @map("file_key")
+  verified        Boolean   @default(false)
+  expiresAt       DateTime? @map("expires_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  farmerProfile        FarmerProfile          @relation(fields: [farmerProfileId], references: [id], onDelete: Cascade)
+  listingCertifications ListingCertification[]
+
+  @@map("certifications")
+}
+
+// ============================================================
+// BUYER DOMAIN
+// ============================================================
+
+model BuyerProfile {
+  id              String     @id @default(uuid())
+  userId          String     @unique @map("user_id")
+  displayName     String     @map("display_name")
+  buyerType       BuyerType  @map("buyer_type")
+  trustScore      Decimal    @default(50) @db.Decimal(5, 2) @map("trust_score")
+  noShowCount     Int        @default(0) @map("no_show_count")
+  defaultCurrency String     @default("INR") @map("default_currency")
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  user          User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  savedFarmers  SavedFarmer[]
+  relationships BuyerFarmerRelationship[]
+  appointments  Appointment[]             @relation("BuyerAppointments")
+  orders        Order[]                   @relation("BuyerOrders")
+
+  @@map("buyer_profiles")
+}
+
+enum BuyerType {
+  DOMESTIC_SAME_REGION
+  DOMESTIC_OTHER_REGION
+  INTERNATIONAL
+
+  @@map("buyer_type")
+}
+
+model SavedFarmer {
+  buyerProfileId  String   @map("buyer_profile_id")
+  farmerProfileId String   @map("farmer_profile_id")
+  savedAt         DateTime @default(now()) @map("saved_at")
+
+  buyerProfile  BuyerProfile  @relation(fields: [buyerProfileId], references: [id], onDelete: Cascade)
+  farmerProfile FarmerProfile @relation(fields: [farmerProfileId], references: [id], onDelete: Cascade)
+
+  @@id([buyerProfileId, farmerProfileId])
+  @@map("saved_farmers")
+}
+
+model BuyerFarmerRelationship {
+  id                      String   @id @default(uuid())
+  buyerProfileId          String   @map("buyer_profile_id")
+  farmerProfileId         String   @map("farmer_profile_id")
+  completedOrders         Int      @default(0) @map("completed_orders")
+  disputeCount            Int      @default(0) @map("dispute_count")
+  appointmentSkipEligible Boolean  @default(false) @map("appointment_skip_eligible")
+  firstOrderAt            DateTime? @map("first_order_at")
+  lastOrderAt             DateTime? @map("last_order_at")
+
+  buyerProfile  BuyerProfile  @relation(fields: [buyerProfileId], references: [id])
+  farmerProfile FarmerProfile @relation(fields: [farmerProfileId], references: [id])
+
+  @@unique([buyerProfileId, farmerProfileId])
+  @@map("buyer_farmer_relationships")
+}
+
+// ============================================================
+// LISTINGS / CATALOG
+// ============================================================
+
+model Category {
+  id               String     @id @default(uuid())
+  name             String
+  slug             String     @unique
+  parentCategoryId String?    @map("parent_category_id")
+  iconUrl          String?    @map("icon_url")
+  parent           Category?  @relation("CategoryTree", fields: [parentCategoryId], references: [id])
+  children         Category[] @relation("CategoryTree")
+  listings         Listing[]
+
+  @@map("categories")
+}
+
+model Listing {
+  id              String        @id @default(uuid())
+  farmerProfileId String        @map("farmer_profile_id")
+  categoryId      String?       @map("category_id")
+  originRegionId  String?       @map("origin_region_id")
+  title           String
+  description     String?
+  variety         String?
+  unitOfSale      String        @map("unit_of_sale") // 'kg', 'box', 'dozen'
+  pricePerUnit    Decimal       @db.Decimal(12, 4) @map("price_per_unit")
+  currency        String        @default("INR")
+  minOrderQty     Decimal       @default(1) @db.Decimal(12, 4) @map("min_order_qty")
+  availableQty    Decimal       @default(0) @db.Decimal(12, 4) @map("available_qty")
+  harvestStart    DateTime?     @map("harvest_start")
+  harvestEnd      DateTime?     @map("harvest_end")
+  qualityGrade    String?       @map("quality_grade") // 'A', 'A+', 'Premium'
+  status          ListingStatus @default(DRAFT)
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  farmerProfile        FarmerProfile          @relation(fields: [farmerProfileId], references: [id], onDelete: Cascade)
+  category             Category?              @relation(fields: [categoryId], references: [id])
+  originRegion         Region?                @relation("OriginRegion", fields: [originRegionId], references: [id])
+  photos               ListingPhoto[]
+  certifications       ListingCertification[]
+  appointments         Appointment[]
+  orders               Order[]
+
+  @@index([originRegionId, categoryId, status])
+  @@map("listings")
+}
+
+enum ListingStatus {
+  DRAFT
+  ACTIVE
+  SOLD_OUT
+  ARCHIVED
+  FROZEN
+
+  @@map("listing_status")
+}
+
+model ListingPhoto {
+  id        String @id @default(uuid())
+  listingId String @map("listing_id")
+  fileKey   String @map("file_key")
+  sortOrder Int    @default(0) @map("sort_order")
+  altText   String? @map("alt_text")
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@map("listing_photos")
+}
+
+model ListingCertification {
+  listingId       String @map("listing_id")
+  certificationId String @map("certification_id")
+
+  listing       Listing       @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  certification Certification @relation(fields: [certificationId], references: [id], onDelete: Cascade)
+
+  @@id([listingId, certificationId])
+  @@map("listing_certifications")
+}
+
+model ShippingCapability {
+  id                   String  @id @default(uuid())
+  farmerProfileId      String  @map("farmer_profile_id")
+  destinationRegionId  String  @map("destination_region_id")
+  leadTimeDays         Int?    @map("lead_time_days")
+  supported            Boolean @default(true)
+  customRate           Decimal? @db.Decimal(12, 4) @map("custom_rate")
+
+  farmerProfile     FarmerProfile @relation(fields: [farmerProfileId], references: [id], onDelete: Cascade)
+  destinationRegion Region        @relation("DestinationRegion", fields: [destinationRegionId], references: [id])
+
+  @@unique([farmerProfileId, destinationRegionId])
+  @@map("shipping_capabilities")
+}
+
+// ============================================================
+// APPOINTMENTS
+// ============================================================
+
+model Appointment {
+  id               String            @id @default(uuid())
+  farmerProfileId  String            @map("farmer_profile_id")
+  buyerProfileId   String            @map("buyer_profile_id")
+  listingId        String?           @map("listing_id")
+  type             AppointmentType
+  status           AppointmentStatus @default(REQUESTED)
+  proposedSlots    Json              @map("proposed_slots") // UTC ISO-8601 array
+  confirmedSlotUtc DateTime?         @map("confirmed_slot_utc")
+  requesterTimezone String?          @map("requester_timezone") // IANA tz
+  farmerTimezone   String?           @map("farmer_timezone")
+  cancellationReason String?         @map("cancellation_reason")
+  isRequired       Boolean           @default(true) @map("is_required")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  farmerProfile FarmerProfile     @relation("FarmerAppointments", fields: [farmerProfileId], references: [id])
+  buyerProfile  BuyerProfile      @relation("BuyerAppointments", fields: [buyerProfileId], references: [id])
+  listing       Listing?          @relation(fields: [listingId], references: [id])
+  notes         AppointmentNote[]
+  orders        Order[]
+
+  @@index([farmerProfileId, status])
+  @@index([buyerProfileId, status])
+  @@map("appointments")
+}
+
+enum AppointmentType {
+  VIDEO
+  PHONE
+  IN_PERSON
+
+  @@map("appointment_type")
+}
+
+enum AppointmentStatus {
+  REQUESTED
+  CONFIRMED
+  COMPLETED
+  NO_SHOW_FARMER
+  NO_SHOW_BUYER
+  CANCELLED
+  RESCHEDULED
+
+  @@map("appointment_status")
+}
+
+model AppointmentNote {
+  id            String   @id @default(uuid())
+  appointmentId String   @map("appointment_id")
+  authorUserId  String   @map("author_user_id")
+  note          String
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  author      User        @relation(fields: [authorUserId], references: [id])
+
+  @@map("appointment_notes")
+}
+
+// ============================================================
+// ORDERS, PAYMENTS & PAYOUTS
+// ============================================================
+
+model FeeConfigVersion {
+  id             String   @id @default(uuid())
+  versionNumber  Int      @unique @map("version_number")
+  serviceFeesPct Decimal  @db.Decimal(5, 4) @map("service_fee_pct") // e.g. 0.0200 = 2%
+  description    String?
+  effectiveFrom  DateTime @map("effective_from")
+  createdBy      String?  @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  orders         Order[]
+
+  @@map("fee_config_versions")
+}
+
+model Order {
+  id                    String         @id @default(uuid())
+  buyerProfileId        String         @map("buyer_profile_id")
+  farmerProfileId       String         @map("farmer_profile_id")
+  listingId             String         @map("listing_id")
+  appointmentId         String?        @map("appointment_id")
+  feeConfigVersionId    String?        @map("fee_config_version_id")
+  quantity              Decimal        @db.Decimal(12, 4)
+  unitPrice             Decimal        @db.Decimal(12, 4) @map("unit_price")
+  currency              String
+  subtotal              Decimal        @db.Decimal(12, 4)
+  serviceFee            Decimal        @db.Decimal(12, 4) @map("service_fee")
+  shippingEstimate      Decimal        @default(0) @db.Decimal(12, 4) @map("shipping_estimate")
+  customsDutyEstimate   Decimal        @default(0) @db.Decimal(12, 4) @map("customs_duty_estimate")
+  total                 Decimal        @db.Decimal(12, 4)
+  tradeDirection        TradeDirection @map("trade_direction")
+  originRegionId        String?        @map("origin_region_id")
+  destinationRegionId   String?        @map("destination_region_id")
+  buyerShippingAddressId String?       @map("buyer_shipping_address_id")
+  status                OrderStatus    @default(PLACED)
+  createdAt             DateTime       @default(now()) @map("created_at")
+  updatedAt             DateTime       @updatedAt @map("updated_at")
+
+  buyerProfile        BuyerProfile      @relation("BuyerOrders", fields: [buyerProfileId], references: [id])
+  farmerProfile       FarmerProfile     @relation("FarmerOrders", fields: [farmerProfileId], references: [id])
+  listing             Listing           @relation(fields: [listingId], references: [id])
+  appointment         Appointment?      @relation(fields: [appointmentId], references: [id])
+  feeConfigVersion    FeeConfigVersion? @relation(fields: [feeConfigVersionId], references: [id])
+  originRegion        Region?           @relation("OrderOriginRegion", fields: [originRegionId], references: [id])
+  destinationRegion   Region?           @relation("OrderDestinationRegion", fields: [destinationRegionId], references: [id])
+  shippingAddress     Address?          @relation(fields: [buyerShippingAddressId], references: [id])
+  statusHistory       OrderStatusHistory[]
+  payments            Payment[]
+  payouts             Payout[]
+  shipments           Shipment[]
+  customsDocuments    CustomsDocument[]
+  reviews             Review[]
+  disputes            Dispute[]
+
+  @@index([tradeDirection, createdAt(sort: Desc)])
+  @@index([farmerProfileId, status])
+  @@index([buyerProfileId, status])
+  @@map("orders")
+}
+
+enum TradeDirection {
+  EXPORT_FROM_REGION
+  IMPORT_TO_REGION
+  DOMESTIC_OTHER
+
+  @@map("trade_direction")
+}
+
+enum OrderStatus {
+  PLACED
+  CONFIRMED
+  PACKED
+  SHIPPED
+  CUSTOMS_CLEARANCE
+  OUT_FOR_DELIVERY
+  DELIVERED
+  COMPLETED
+  CANCELLED
+  DISPUTED
+
+  @@map("order_status")
+}
+
+model OrderStatusHistory {
+  id        String   @id @default(uuid())
+  orderId   String   @map("order_id")
+  status    OrderStatus
+  changedBy String?  @map("changed_by")
+  changedAt DateTime @default(now()) @map("changed_at")
+  note      String?
+
+  order     Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  changedByUser User? @relation(fields: [changedBy], references: [id])
+
+  @@map("order_status_history")
+}
+
+model Payment {
+  id          String        @id @default(uuid())
+  orderId     String        @map("order_id")
+  provider    PaymentProvider
+  providerRef String        @map("provider_ref")
+  amount      Decimal       @db.Decimal(12, 4)
+  currency    String
+  status      PaymentStatus @default(PENDING)
+  rawWebhook  Json?         @map("raw_webhook")
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@map("payments")
+}
+
+enum PaymentProvider {
+  RAZORPAY
+  STRIPE
+  PAYPAL
+
+  @@map("payment_provider")
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  CAPTURED
+  REFUNDED
+  FAILED
+
+  @@map("payment_status")
+}
+
+model Payout {
+  id              String       @id @default(uuid())
+  farmerProfileId String       @map("farmer_profile_id")
+  orderId         String       @map("order_id")
+  grossAmount     Decimal      @db.Decimal(12, 4) @map("gross_amount")
+  deductions      Json         // [{"label":"Platform Fee","amount":120}]
+  netAmount       Decimal      @db.Decimal(12, 4) @map("net_amount")
+  status          PayoutStatus @default(PENDING)
+  releasedAt      DateTime?    @map("released_at")
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  farmerProfile FarmerProfile @relation(fields: [farmerProfileId], references: [id])
+  order         Order         @relation(fields: [orderId], references: [id])
+
+  @@map("payouts")
+}
+
+enum PayoutStatus {
+  PENDING
+  RELEASED
+  HELD
+  REVERSED
+
+  @@map("payout_status")
+}
+
+model Shipment {
+  id                  String         @id @default(uuid())
+  orderId             String         @map("order_id")
+  logisticsPartnerId  String?        @map("logistics_partner_id")
+  trackingRef         String?        @map("tracking_ref")
+  providerName        String?        @map("provider_name")
+  status              ShipmentStatus @default(PENDING_PICKUP)
+  proofOfDeliveryKey  String?        @map("proof_of_delivery_key")
+  lastUpdatedAt       DateTime       @default(now()) @map("last_updated_at")
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@map("shipments")
+}
+
+enum ShipmentStatus {
+  PENDING_PICKUP
+  PICKED_UP
+  IN_TRANSIT
+  CUSTOMS_SUBMITTED
+  CUSTOMS_CLEARED
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED_DELIVERY
+  RETURNED
+
+  @@map("shipment_status")
+}
+
+model CustomsDocument {
+  id        String              @id @default(uuid())
+  orderId   String              @map("order_id")
+  docType   String              @map("doc_type")
+  hsCode    String?             @map("hs_code")
+  fileKey   String?             @map("file_key")
+  status    CustomsDocStatus    @default(PENDING)
+  createdAt DateTime            @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@map("customs_documents")
+}
+
+enum CustomsDocStatus {
+  PENDING
+  SUBMITTED
+  CLEARED
+  REJECTED
+
+  @@map("customs_doc_status")
+}
+
+// ============================================================
+// TRUST & FEEDBACK
+// ============================================================
+
+model Review {
+  id            String         @id @default(uuid())
+  orderId       String         @map("order_id")
+  direction     ReviewDirection
+  authorUserId  String         @map("author_user_id")
+  subjectUserId String         @map("subject_user_id")
+  rating        Int            // 1-5
+  comment       String?
+  createdAt     DateTime       @default(now()) @map("created_at")
+
+  order   Order @relation(fields: [orderId], references: [id])
+  author  User  @relation("AuthoredReviews", fields: [authorUserId], references: [id])
+
+  @@unique([orderId, direction])
+  @@map("reviews")
+}
+
+enum ReviewDirection {
+  BUYER_TO_FARMER
+  FARMER_TO_BUYER
+
+  @@map("review_direction")
+}
+
+model Dispute {
+  id                  String        @id @default(uuid())
+  orderId             String        @map("order_id")
+  openedBy            String        @map("opened_by")
+  status              DisputeStatus @default(OPEN)
+  resolutionAction    String?       @map("resolution_action")
+  resolutionNote      String?       @map("resolution_note")
+  assignedModeratorId String?       @map("assigned_moderator_id")
+  evidenceKeys        Json?         @map("evidence_keys") // S3 keys array
+  createdAt           DateTime      @default(now()) @map("created_at")
+  resolvedAt          DateTime?     @map("resolved_at")
+
+  order     Order @relation(fields: [orderId], references: [id])
+  openedByUser User @relation("OpenedDisputes", fields: [openedBy], references: [id])
+
+  @@map("disputes")
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  REJECTED
+
+  @@map("dispute_status")
+}
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+
+model NotificationPreference {
+  userId   String  @map("user_id")
+  category String
+  channel  String  // 'email', 'sms', 'push'
+  enabled  Boolean @default(true)
+
+  @@id([userId, category, channel])
+  @@map("notification_preferences")
+}
+
+model NotificationQueue {
+  id        String             @id @default(uuid())
+  userId    String             @map("user_id")
+  category  String
+  channel   String
+  payload   Json
+  status    NotificationStatus @default(QUEUED)
+  attempts  Int                @default(0)
+  createdAt DateTime           @default(now()) @map("created_at")
+  sentAt    DateTime?          @map("sent_at")
+
+  @@index([status, createdAt])
+  @@map("notification_queue")
+}
+
+enum NotificationStatus {
+  QUEUED
+  PROCESSING
+  SENT
+  FAILED
+
+  @@map("notification_status")
+}
