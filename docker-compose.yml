@@ -34,7 +34,7 @@ services:
       retries: 5
 
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     container_name: kashroot_minio
     command: server /data --console-address ':9001'
     environment:

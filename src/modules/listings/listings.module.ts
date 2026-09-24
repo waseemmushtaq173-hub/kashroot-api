@@ -7,7 +7,7 @@ import { RbacModule } from '../rbac/rbac.module';
 
 import { ListingsController } from './listings.controller';
 import { ListingsService } from './listings.service';
-import { ListingsSearchService } from './search/listings-search.service';
+import { ListingsSearchService } from './listings-search.service';
 import {
   InventoryReservationsService,
   RESERVATION_EXPIRY_QUEUE,

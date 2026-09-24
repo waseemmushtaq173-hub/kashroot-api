@@ -13,9 +13,9 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiParam } from '@nestjs/swagger';
 import { Request } from 'express';
-import { JwtAuthGuard }   from '../auth/guards/jwt-auth.guard';
-import { RolesGuard }     from '../auth/guards/roles.guard';
-import { Roles }          from '../auth/decorators/roles.decorator';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 import { OrdersService }  from './orders.service';
 import { PaymentsService } from './payments.service';
 import { TradeDirectionService } from './trade-direction.service';
@@ -148,7 +148,7 @@ export class OrdersController {
    * POST /payments/webhooks/razorpay
    * Public endpoint (no JWT guard — Razorpay cannot authenticate).
    * Signature verified inside PaymentsService.handleRazorpayWebhook() BEFORE payload is parsed.
-   * Requires raw body access: app.use('/orders/payments/webhooks/razorpay', express.raw({ type: '*/*' }))
+   * Requires raw body access: app.use('/orders/payments/webhooks/razorpay', express.raw({ type: '*' }))
    * configured in main.ts or the module.
    */
   @Post('payments/webhooks/razorpay')
