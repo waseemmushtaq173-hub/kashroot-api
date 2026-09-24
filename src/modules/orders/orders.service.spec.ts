@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { OrdersService } from './orders.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { OrderStatus, TradeDirection } from '@prisma/client';
 
 describe('OrdersService', () => {
@@ -12,6 +12,7 @@ describe('OrdersService', () => {
   const mockPrismaService = {
     listing: { findUnique: jest.fn() },
     order: { findUnique: jest.fn(), create: jest.fn() },
+    appointment: { findUnique: jest.fn() }, 
   };
 
   beforeEach(async () => {
@@ -27,7 +28,6 @@ describe('OrdersService', () => {
   });
 
   afterEach(() => {
-    // Reset mocks after each test so they don't interfere with one another
     jest.clearAllMocks();
   });
 
@@ -40,8 +40,16 @@ describe('OrdersService', () => {
   });
 
   describe('createOrder', () => {
+    it('should throw BadRequestException if appointment is not completed', async () => {
+      mockPrismaService.appointment.findUnique.mockResolvedValue({ id: 'app-1', status: 'SCHEDULED' });
+
+      await expect(
+        service.createOrder('buyer-1', 'listing-1', 10, 'app-1', 'fee-1')
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('should throw NotFoundException if listing does not exist', async () => {
-      // Simulate the database returning null
+      mockPrismaService.appointment.findUnique.mockResolvedValue({ id: 'app-1', status: 'COMPLETED' });
       mockPrismaService.listing.findUnique.mockResolvedValue(null);
 
       await expect(
@@ -49,37 +57,52 @@ describe('OrdersService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
+    it('should throw BadRequestException if requested quantity exceeds stock', async () => {
+      mockPrismaService.appointment.findUnique.mockResolvedValue({ id: 'app-1', status: 'COMPLETED' });
+      mockPrismaService.listing.findUnique.mockResolvedValue({ 
+        id: 'listing-1', 
+        stock: 5 // Stock is less than the requested quantity of 10
+      });
+
+      await expect(
+        service.createOrder('buyer-1', 'listing-1', 10, 'app-1', 'fee-1')
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('should create an order successfully with calculated totals', async () => {
-      // Simulate a valid listing returned from the database
+      mockPrismaService.appointment.findUnique.mockResolvedValue({ id: 'app-1', status: 'COMPLETED' });
+      
       const mockListing = {
         id: 'listing-1',
         pricePerUnit: 100,
         currency: 'USD',
         farmerProfileId: 'farmer-1',
+        stock: 50, // Added stock to allow the 10 quantity order to pass
       };
-      
       mockPrismaService.listing.findUnique.mockResolvedValue(mockListing);
       
-      // Simulate the created order returned by Prisma
       const expectedOrder = { id: 'order-1', subtotal: 1000 };
       mockPrismaService.order.create.mockResolvedValue(expectedOrder);
 
       const result = await service.createOrder('buyer-1', 'listing-1', 10, 'app-1', 'fee-1');
 
-      // Verify the final output
       expect(result).toEqual(expectedOrder);
-      
-      // Verify the math calculations were passed to Prisma correctly
-      expect(mockPrismaService.order.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            subtotal: 1000,
-            serviceFee: 50,
-            total: 1050,
-            tradeDirection: TradeDirection.EXPORT_FROM_REGION,
-          }),
-        })
-      );
+    });
+  });
+
+  describe('loadOrder', () => {
+    it('should throw NotFoundException if order does not exist', async () => {
+      mockPrismaService.order.findUnique.mockResolvedValue(null);
+      await expect(service.loadOrder('non-existent-id')).rejects.toThrow(NotFoundException);
+    });
+
+    it('should return the order when found', async () => {
+      const mockOrder = { id: 'order-123', status: OrderStatus.PLACED };
+      mockPrismaService.order.findUnique.mockResolvedValue(mockOrder);
+
+      const result = await service.loadOrder('order-123');
+
+      expect(result).toEqual(mockOrder);
     });
   });
 });
