@@ -905,16 +905,40 @@ model MandiPrice {
 }
 
 model ExpertProfile {
-  id             String   @id @default(uuid())
-  userId         String   @unique @map("user_id")
-  displayName    String   @map("display_name")
-  specialization String?
-  bio            String?
-  audioPrompts   Json?    @map("audio_prompts") // { "KASHMIRI": url, "URDU": url, ... }
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  id                 String             @id @default(uuid())
+  userId             String             @unique @map("user_id")
+  displayName        String             @map("display_name")
+  specialization     String?
+  bio                String?
+  verificationStatus VerificationStatus @default(PENDING) @map("verification_status")
+  audioPrompts       Json?              @map("audio_prompts") // { "KASHMIRI": url, "URDU": url, ... }
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kycDocuments ExpertKycDocument[]
 
   @@map("expert_profiles")
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+
+  @@map("verification_status")
+}
+
+// Expert credential documents (separate from farmer KycDocument / kyc_documents).
+model ExpertKycDocument {
+  id              String   @id @default(uuid())
+  expertProfileId String   @map("expert_profile_id")
+  documentUrl     String   @map("document_url")
+  documentType    String   @map("document_type") // 'DEGREE', 'GOVT_ID', ...
+  uploadedAt      DateTime @default(now()) @map("uploaded_at")
+
+  expertProfile ExpertProfile @relation(fields: [expertProfileId], references: [id], onDelete: Cascade)
+
+  @@index([expertProfileId])
+  @@map("expert_kyc_documents")
 }

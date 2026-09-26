@@ -8,6 +8,7 @@ import { RbacModule } from './modules/rbac/rbac.module';
 import { ListingsModule } from './modules/listings/listings.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { AiAssistantModule } from './modules/ai-assistant/ai-assistant.module';
+import { ExpertKycModule } from './modules/expert-kyc/expert-kyc.module';
 import { PrismaService } from './prisma/prisma.service';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -44,6 +45,7 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
     ListingsModule,
     OrdersModule,
     AiAssistantModule,
+    ExpertKycModule,
     // Future modules added here:
     // AppointmentsModule,
     // PaymentsModule, PayoutsModule, ShipmentsModule,
