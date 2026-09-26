@@ -26,7 +26,8 @@ export type UserRole =
   | 'SUPPORT_MODERATOR'
   | 'FARMER'
   | 'BUYER'
-  | 'EXPERT';
+  | 'EXPERT'
+  | 'TESTER';
 
 export interface AuthUser {
   /** JWT `sub` — the user id. */
@@ -86,7 +87,9 @@ export function useAuth(): AuthContextValue {
 }
 
 /** Coarse persona grouping used by the router to pick a shell. */
-export function personaForRole(role: UserRole): 'farmer' | 'buyer' | 'expert' | 'admin' {
+export function personaForRole(
+  role: UserRole,
+): 'farmer' | 'buyer' | 'expert' | 'admin' | 'tester' {
   switch (role) {
     case 'FARMER':
       return 'farmer';
@@ -94,6 +97,8 @@ export function personaForRole(role: UserRole): 'farmer' | 'buyer' | 'expert' | 
       return 'buyer';
     case 'EXPERT':
       return 'expert';
+    case 'TESTER':
+      return 'tester';
     case 'PLATFORM_ADMIN':
     case 'REGIONAL_ADMIN':
     case 'SUPPORT_MODERATOR':

@@ -15,6 +15,7 @@ import { FarmerLayout } from '../layouts/FarmerLayout';
 import { BuyerLayout } from '../layouts/BuyerLayout';
 import { ExpertLayout } from '../layouts/ExpertLayout';
 import { AdminLayout } from '../layouts/AdminLayout';
+import { TesterLayout } from '../layouts/TesterLayout';
 
 export function RoleLayoutRouter({ children }: { children: ReactNode }) {
   const { user, role } = useAuth();
@@ -32,6 +33,8 @@ export function RoleLayoutRouter({ children }: { children: ReactNode }) {
       return <BuyerLayout>{children}</BuyerLayout>;
     case 'expert':
       return <ExpertLayout>{children}</ExpertLayout>;
+    case 'tester':
+      return <TesterLayout>{children}</TesterLayout>;
     case 'admin':
       return <AdminLayout>{children}</AdminLayout>;
   }

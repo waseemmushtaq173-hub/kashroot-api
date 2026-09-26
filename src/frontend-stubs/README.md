@@ -42,11 +42,13 @@ src/frontend-stubs/
     BuyerLayout.tsx     # B2B console, left sidebar, data-dense
     ExpertLayout.tsx    # clean pro dashboard, saffron accent
     AdminLayout.tsx     # dark institutional back-office
+    TesterLayout.tsx    # AgroGuard QC suite: camera HUD + audit toolbar
   features/
     farmer/FarmerHome.tsx        # mandi listic cards
     buyer/BuyerDashboard.tsx     # escrow tracking + market KPIs
     expert/ExpertHome.tsx        # KYC standing + appointments
     admin/KycModerationQueue.tsx # approve/reject pending expert KYC
+    tester/TesterDashboard.tsx   # agency-sample vs golden-reference verdict
   VoiceAssistantButton.tsx   # (existing) the farmer's hero control
   MandiPriceCard.tsx         # picture-driven price card + "Listen" (spoken audio)
   EscrowPaymentModal.tsx     # payment drawer; auto-plays localized escrow audit
@@ -86,6 +88,7 @@ mounts one of four shells:
 | `FARMER`                                        | farmer  | `FarmerLayout` |
 | `BUYER`                                          | buyer   | `BuyerLayout`  |
 | `EXPERT`                                         | expert  | `ExpertLayout` |
+| `TESTER`                                         | tester  | `TesterLayout` |
 | `PLATFORM_ADMIN` / `REGIONAL_ADMIN` / `SUPPORT_MODERATOR` | admin | `AdminLayout` |
 
 In Next.js this lives in a `(protected)` group layout wrapping `{children}`;
@@ -104,6 +107,8 @@ maps to a role-switched root navigator. See `AppShellExample.tsx`.
 - `KycModerationQueue` → `GET /api/v1/admin/experts/kyc/pending`,
   `PATCH /api/v1/admin/experts/kyc/:id/review`
 - `BuyerDashboard` escrow rows → `GET /api/v1/escrow/:orderId` (placeholder data)
+- `TesterDashboard` → `POST /api/v1/tester/inspect`, `GET /api/v1/tester/history`
+  (AgroGuard counterfeit detection; TESTER role)
 
 ## English UI + 4-Language Spoken Audio
 

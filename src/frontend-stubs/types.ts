@@ -72,3 +72,35 @@ export interface EscrowUpdate {
   audioPrompts?: Partial<Record<PreferredLanguage, string>> | null;
   updatedAt: string; // ISO timestamp
 }
+
+/** AgroGuard counterfeit-detection verdict (mirrors InspectionVerdict). */
+export type InspectionVerdict = 'GENUINE_FACTORY' | 'SUSPICIOUS_COUNTERFEIT';
+
+/** Packaging flaws the scan pipeline detected against the golden reference. */
+export interface DiscrepancyReport {
+  logoMismatch: boolean;
+  hologramMismatch: boolean;
+  unlistedBatch: boolean;
+  missingSeal: boolean;
+  fontMismatches: string[];
+}
+
+/**
+ * Result of POST /api/v1/tester/inspect. Carries the verdict + confidence, the
+ * detected discrepancies, and the AUTHENTIC manufacturer guidance (with
+ * per-language spoken dosage clips) so the tester always has the real dosage.
+ */
+export interface AgencyInspectionResult {
+  inspectionId: string;
+  verdict: InspectionVerdict;
+  matchConfidence: number; // 0..1
+  brand: string;
+  manufacturerName: string;
+  discrepancyReport: DiscrepancyReport;
+  verifiedInstructions: {
+    chemicalComposition: string;
+    targetCrops: string;
+    dosageInstructions: string;
+    audioPrompts?: Partial<Record<PreferredLanguage, string>> | null;
+  };
+}

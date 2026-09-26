@@ -38,3 +38,9 @@ export const adminNav: NavItem[] = [
   { label: 'Mandi Boards', href: '/admin/mandi', icon: '📈' },
   { label: 'Disputes', href: '/admin/disputes', icon: '⚖️' },
 ];
+
+export const testerNav: NavItem[] = [
+  { label: 'Station', href: '/tester', icon: '🔬' },
+  { label: 'Inspect', href: '/tester/inspect', icon: '📸' },
+  { label: 'History', href: '/tester/history', icon: '🗒️' },
+];

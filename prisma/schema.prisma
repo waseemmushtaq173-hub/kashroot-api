@@ -36,6 +36,7 @@ model User {
   farmerProfile      FarmerProfile?
   buyerProfile       BuyerProfile?
   expertProfile      ExpertProfile?
+  testerProfile      TesterProfile?
   addresses          Address[]
   appointmentNotes   AppointmentNote[]
   orderStatusChanges OrderStatusHistory[]
@@ -69,6 +70,7 @@ enum RoleName {
   BUYER
   LOGISTICS_PARTNER
   SUPPORT_MODERATOR
+  TESTER
   SYSTEM
 
   @@map("role_name")
@@ -1019,4 +1021,69 @@ model LedgerEntry {
   @@index([farmerProfileId, createdAt])
   @@index([buyerProfileId, createdAt])
   @@map("ledger_entries")
+}
+
+// ============================================================
+// AGROGUARD — COUNTERFEIT PESTICIDE / INSECTICIDE TESTING
+// ============================================================
+// Field testers (Horticulture Dept / QC labs) scan agency-sold bottles
+// (e.g. "Superstar" apple spray) and compare them against a curated
+// industry "golden reference" to flag suspected counterfeits.
+
+enum InspectionVerdict {
+  GENUINE_FACTORY
+  SUSPICIOUS_COUNTERFEIT
+
+  @@map("inspection_verdict")
+}
+
+model TesterProfile {
+  id           String   @id @default(uuid())
+  userId       String   @unique @map("user_id")
+  organization String // e.g. "Horticulture Department / Quality Control Lab"
+  badgeNumber  String?  @map("badge_number")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user        User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  inspections AgencyPesticideInspection[]
+
+  @@map("tester_profiles")
+}
+
+model IndustryGoldenReference {
+  id                     String   @id @default(uuid())
+  brandName              String   @unique @map("brand_name") // e.g. "Superstar"
+  manufacturerName       String   @map("manufacturer_name") // e.g. "FIL Industries"
+  chemicalComposition    String   @map("chemical_composition")
+  targetCrops            String   @map("target_crops") // e.g. "Apple"
+  factoryBatchPrefix     String   @map("factory_batch_prefix") // authentic batch prefix
+  factoryHologramPattern String   @map("factory_hologram_pattern")
+  goldenImageUrl         String   @map("golden_image_url")
+  dosageInstructions     String   @map("dosage_instructions") // e.g. "1-1.5 ml/L for leaf vigour"
+  audioPrompts           Json?    @map("audio_prompts") // spoken dosage per language
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  @@map("industry_golden_references")
+}
+
+model AgencyPesticideInspection {
+  id                    String            @id @default(uuid())
+  testerProfileId       String            @map("tester_profile_id")
+  agencyName            String            @map("agency_name") // local shop / dealer
+  productBrand          String            @map("product_brand") // e.g. "Superstar"
+  scannedBatchNo        String?           @map("scanned_batch_no")
+  scannedBottleImageUrl String            @map("scanned_bottle_image_url")
+  verdict               InspectionVerdict
+  matchConfidence       Float             @map("match_confidence") // 0..1
+  discrepancyReport     Json?             @map("discrepancy_report") // { logoMismatch, fontMismatches, missingSeal, unlistedBatch }
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+
+  testerProfile TesterProfile @relation(fields: [testerProfileId], references: [id], onDelete: Cascade)
+
+  @@index([testerProfileId, createdAt])
+  @@index([productBrand])
+  @@map("agency_pesticide_inspections")
 }
