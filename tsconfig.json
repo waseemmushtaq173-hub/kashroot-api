@@ -31,7 +31,6 @@
     "src/modules/realtime",
     "src/modules/orders/payments.service.ts",
     "src/modules/orders/pricing-snapshot.service.ts",
-    "src/modules/orders/ledger.service.ts",
     "src/modules/orders/region-pair-enablement.service.ts",
     "src/modules/listings/inventory-reservations.service.ts",
     "src/modules/listings/queues/reservation-expiry.processor.ts"

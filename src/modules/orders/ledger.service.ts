@@ -49,29 +49,27 @@ export class LedgerService {
   constructor(private readonly prisma: PrismaService) {}
 
   // ───────────────────────────────────────────────────────────────
-  // WRITE — appendEntry() is the ONLY write surface
+  // WRITE — createEntry() is the ONLY write surface
   // ───────────────────────────────────────────────────────────────
 
   /**
-   * appendEntry
+   * createEntry
    *
-   * Appends a new ledger entry. This is the ONLY write method on LedgerService.
-   * Call with a transaction client (tx) when inside a $transaction block,
-   * or call without tx for standalone writes.
+   * Inserts a new ledger entry. This is the ONLY write method on LedgerService —
+   * there is deliberately no update or delete surface (see note at the bottom).
+   * Pass a transaction client (tx) when called inside a $transaction block (e.g.
+   * from EscrowService), or omit it for a standalone append.
    *
-   * To correct an erroneous entry: append a new offsetting entry.
-   * Example: wrong DEBIT of 100 → append CREDIT of 100 with description='Correction: reversed DEBIT for order X'
-   *
-   * @param txOrPrisma - Prisma transaction client OR undefined (uses this.prisma)
-   * @param input      - Ledger entry data
+   * To correct an erroneous entry: create a new offsetting entry (opposite
+   * entryType, same amount) with a description explaining the reversal.
    */
-  async appendEntry(
-    txOrPrisma: Prisma.TransactionClient | PrismaService | undefined,
+  async createEntry(
     input: AppendLedgerEntryInput,
+    tx?: Prisma.TransactionClient,
   ): Promise<void> {
-    const client = txOrPrisma ?? this.prisma;
+    const client = tx ?? this.prisma;
 
-    await (client as PrismaService).ledgerEntry.create({
+    await client.ledgerEntry.create({
       data: {
         farmerProfileId: input.farmerProfileId,
         buyerProfileId:  input.buyerProfileId,
@@ -89,6 +87,22 @@ export class LedgerService {
       `Ledger ${input.entryType} appended: ${input.amount} ${input.currency} | ` +
       `order=${input.relatedOrderId} refund=${input.relatedRefundId} | ${input.description}`,
     );
+  }
+
+  /**
+   * appendEntry — backward-compatible alias for {@link createEntry}.
+   *
+   * Kept for the original (tx-first) call signature used elsewhere. Delegates to
+   * createEntry so there remains exactly one insert path and zero mutation paths.
+   */
+  async appendEntry(
+    txOrPrisma: Prisma.TransactionClient | PrismaService | undefined,
+    input: AppendLedgerEntryInput,
+  ): Promise<void> {
+    const tx = txOrPrisma && txOrPrisma !== this.prisma
+      ? (txOrPrisma as Prisma.TransactionClient)
+      : undefined;
+    return this.createEntry(input, tx);
   }
 
   // ───────────────────────────────────────────────────────────────

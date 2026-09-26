@@ -10,6 +10,7 @@ import { OrdersModule } from './modules/orders/orders.module';
 import { AiAssistantModule } from './modules/ai-assistant/ai-assistant.module';
 import { ExpertKycModule } from './modules/expert-kyc/expert-kyc.module';
 import { MandiPricesModule } from './modules/mandi-prices/mandi-prices.module';
+import { EscrowModule } from './modules/escrow/escrow.module';
 import { PrismaService } from './prisma/prisma.service';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -48,6 +49,7 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
     AiAssistantModule,
     ExpertKycModule,
     MandiPricesModule,
+    EscrowModule,
     // Future modules added here:
     // AppointmentsModule,
     // PaymentsModule, PayoutsModule, ShipmentsModule,
