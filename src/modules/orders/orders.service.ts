@@ -90,24 +90,45 @@ export class OrdersService {
     const serviceFee = subtotal * 0.05; 
     const total = subtotal + serviceFee;
 
-    // --- Create Order ---
-    const order = await this.prisma.order.create({
-      data: {
-        status: OrderStatus.PLACED,
-        quantity: quantity,
-        buyerProfile: { connect: { id: buyerProfileId } },
-        listing: { connect: { id: listingId } },
-        farmerProfile: { connect: { id: listing.farmerProfileId } }, 
-        appointment: { connect: { id: appointmentId } },             
-        feeConfigVersion: { connect: { id: feeConfigVersionId } },   
-        unitPrice: unitPrice,       
-        currency: listing.currency, 
-        subtotal: subtotal,        
-        serviceFee: serviceFee,       
-        total: total,           
-        tradeDirection: TradeDirection.EXPORT_FROM_REGION 
-      }
-    });
+    // --- GATE 4: Pricing Snapshot ---
+    const pricingSnapshot = {
+      baseUnitPrice: unitPrice,
+      quantity: quantity,
+      subtotal: subtotal,
+      serviceFeeDetails: {
+        rate: 0.05,
+        amount: serviceFee
+      },
+      totalApplied: total,
+      currency: listing.currency,
+      capturedAt: new Date().toISOString()
+    };
+
+    // --- GATE 5: Database Transaction (Inventory Lock) ---
+    const [order, updatedListing] = await this.prisma.$transaction([
+      this.prisma.order.create({
+        data: {
+          status: OrderStatus.PLACED,
+          quantity: quantity,
+          buyerProfile: { connect: { id: buyerProfileId } },
+          listing: { connect: { id: listingId } },
+          farmerProfile: { connect: { id: listing.farmerProfileId } }, 
+          appointment: { connect: { id: appointmentId } },             
+          feeConfigVersion: { connect: { id: feeConfigVersionId } },   
+          unitPrice: unitPrice,       
+          currency: listing.currency, 
+          subtotal: subtotal,        
+          serviceFee: serviceFee,       
+          total: total,           
+          tradeDirection: TradeDirection.EXPORT_FROM_REGION,
+          pricingSnapshot: pricingSnapshot 
+        }
+      }),
+      this.prisma.listing.update({
+        where: { id: listingId },
+        data: { stock: { decrement: quantity } }
+      })
+    ]);
 
     return order;
   }

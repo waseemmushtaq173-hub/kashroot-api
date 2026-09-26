@@ -10,12 +10,13 @@ describe('OrdersService', () => {
 
   // Create a mock object to simulate the database
   const mockPrismaService = {
-    listing: { findUnique: jest.fn() },
+    listing: { findUnique: jest.fn(), update: jest.fn() },
     order: { findUnique: jest.fn(), create: jest.fn() },
     appointment: { findUnique: jest.fn() },
     buyerProfile: { findUnique: jest.fn() },
     address: { findFirst: jest.fn() },
     shippingCapability: { findUnique: jest.fn() },
+    $transaction: jest.fn(), // <-- ADDED TRANSACTION MOCK
   };
 
   beforeEach(async () => {
@@ -79,7 +80,7 @@ describe('OrdersService', () => {
       mockPrismaService.buyerProfile.findUnique.mockResolvedValue({ id: 'buyer-1', userId: 'user-1' });
       mockPrismaService.address.findFirst.mockResolvedValue({ regionId: 'region-dest' });
       
-      // Simulate unsupported trade route (Gate 2 fails)
+      // Simulate unsupported trade route
       mockPrismaService.shippingCapability.findUnique.mockResolvedValue({ supported: false });
 
       await expect(
@@ -87,7 +88,7 @@ describe('OrdersService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('should create an order successfully with calculated totals', async () => {
+    it('should create an order successfully with calculated totals and inventory lock', async () => {
       mockPrismaService.appointment.findUnique.mockResolvedValue({ id: 'app-1', status: 'COMPLETED' });
       
       const mockListing = {
@@ -104,7 +105,10 @@ describe('OrdersService', () => {
       mockPrismaService.shippingCapability.findUnique.mockResolvedValue({ supported: true });
       
       const expectedOrder = { id: 'order-1', subtotal: 1000 };
-      mockPrismaService.order.create.mockResolvedValue(expectedOrder);
+      const expectedListingUpdate = { id: 'listing-1', stock: 40 };
+      
+      // Simulate the array returned by the $transaction
+      mockPrismaService.$transaction.mockResolvedValue([expectedOrder, expectedListingUpdate]);
 
       const result = await service.createOrder('buyer-1', 'listing-1', 10, 'app-1', 'fee-1');
 

@@ -37,7 +37,7 @@ export class ListingsService {
   remove(id: string) {
     return this.prisma.listing.update({
       where: { id },
-      data: { status: 'SUSPENDED' },
+      data: { status: 'ARCHIVED' },
     });
   }
 }

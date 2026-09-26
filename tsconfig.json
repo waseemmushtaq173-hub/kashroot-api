@@ -16,5 +16,25 @@
     "strictNullChecks": false,
     "resolveJsonModule": true,
     "esModuleInterop": true
-  }
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    "seed",
+    "**/*.spec.ts",
+    "src/modules/appointments",
+    "src/modules/admin",
+    "src/modules/chat",
+    "src/modules/disputes",
+    "src/modules/notifications",
+    "src/modules/realtime",
+    "src/modules/orders/orders.controller.ts",
+    "src/modules/orders/orders.module.ts",
+    "src/modules/orders/payments.service.ts",
+    "src/modules/orders/pricing-snapshot.service.ts",
+    "src/modules/orders/ledger.service.ts",
+    "src/modules/orders/region-pair-enablement.service.ts",
+    "src/modules/listings/inventory-reservations.service.ts",
+    "src/modules/listings/queues/reservation-expiry.processor.ts"
+  ]
 }
