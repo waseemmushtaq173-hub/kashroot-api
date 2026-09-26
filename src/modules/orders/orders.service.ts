@@ -23,8 +23,8 @@ export class OrdersService {
   }
 
   async createOrder(
-    buyerProfileId: string, 
-    listingId: string, 
+    userId: string,
+    listingId: string,
     quantity: number,
     appointmentId: string,
     feeConfigVersionId: string
@@ -58,13 +58,13 @@ export class OrdersService {
 
     // --- GATE 2: Region-Pair Check (Shipping Capability) ---
     const buyer = await this.prisma.buyerProfile.findUnique({
-      where: { id: buyerProfileId }
+      where: { userId }
     });
 
     if (!buyer) throw new NotFoundException('Buyer profile not found.');
 
     const defaultAddress = await this.prisma.address.findFirst({
-      where: { userId: buyer.userId, isDefault: true }
+      where: { userId, isDefault: true }
     });
 
     if (!defaultAddress || !defaultAddress.regionId) {
@@ -110,7 +110,7 @@ export class OrdersService {
         data: {
           status: OrderStatus.PLACED,
           quantity: quantity,
-          buyerProfile: { connect: { id: buyerProfileId } },
+          buyerProfile: { connect: { id: buyer.id } },
           listing: { connect: { id: listingId } },
           farmerProfile: { connect: { id: listing.farmerProfileId } }, 
           appointment: { connect: { id: appointmentId } },             

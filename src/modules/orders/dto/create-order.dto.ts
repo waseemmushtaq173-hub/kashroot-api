@@ -3,8 +3,8 @@ import { ApiProperty } from '@nestjs/swagger';
 
 /**
  * CreateOrderDto — submitted by BUYER to place an order.
- * NOTE: buyerProfileId is accepted in the body for now; it will be resolved
- * server-side from the authenticated user token in a later iteration.
+ * buyerProfileId is NOT accepted from the client; it is resolved server-side
+ * from the authenticated user (see OrdersController).
  */
 export class CreateOrderDto {
   @ApiProperty({ format: 'uuid' })
@@ -23,9 +23,4 @@ export class CreateOrderDto {
   @ApiProperty({ format: 'uuid' })
   @IsUUID()
   feeConfigVersionId: string;
-
-  // TODO: derive from req.user once auth wiring lands; trusted from body for now.
-  @ApiProperty({ format: 'uuid' })
-  @IsUUID()
-  buyerProfileId: string;
 }

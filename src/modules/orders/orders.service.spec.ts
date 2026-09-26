@@ -48,7 +48,7 @@ describe('OrdersService', () => {
       mockPrismaService.appointment.findUnique.mockResolvedValue({ id: 'app-1', status: 'SCHEDULED' });
 
       await expect(
-        service.createOrder('buyer-1', 'listing-1', 10, 'app-1', 'fee-1')
+        service.createOrder('user-1', 'listing-1', 10, 'app-1', 'fee-1')
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -57,7 +57,7 @@ describe('OrdersService', () => {
       mockPrismaService.listing.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.createOrder('buyer-1', 'invalid-listing', 10, 'app-1', 'fee-1')
+        service.createOrder('user-1', 'invalid-listing', 10, 'app-1', 'fee-1')
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -69,7 +69,7 @@ describe('OrdersService', () => {
       });
 
       await expect(
-        service.createOrder('buyer-1', 'listing-1', 10, 'app-1', 'fee-1')
+        service.createOrder('user-1', 'listing-1', 10, 'app-1', 'fee-1')
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -77,14 +77,14 @@ describe('OrdersService', () => {
       mockPrismaService.appointment.findUnique.mockResolvedValue({ id: 'app-1', status: 'COMPLETED' });
       mockPrismaService.listing.findUnique.mockResolvedValue({ id: 'listing-1', stock: 50, farmerProfileId: 'farmer-1' });
       
-      mockPrismaService.buyerProfile.findUnique.mockResolvedValue({ id: 'buyer-1', userId: 'user-1' });
+      mockPrismaService.buyerProfile.findUnique.mockResolvedValue({ id: 'buyer-profile-1', userId: 'user-1' });
       mockPrismaService.address.findFirst.mockResolvedValue({ regionId: 'region-dest' });
       
       // Simulate unsupported trade route
       mockPrismaService.shippingCapability.findUnique.mockResolvedValue({ supported: false });
 
       await expect(
-        service.createOrder('buyer-1', 'listing-1', 10, 'app-1', 'fee-1')
+        service.createOrder('user-1', 'listing-1', 10, 'app-1', 'fee-1')
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -100,7 +100,7 @@ describe('OrdersService', () => {
       };
       mockPrismaService.listing.findUnique.mockResolvedValue(mockListing);
       
-      mockPrismaService.buyerProfile.findUnique.mockResolvedValue({ id: 'buyer-1', userId: 'user-1' });
+      mockPrismaService.buyerProfile.findUnique.mockResolvedValue({ id: 'buyer-profile-1', userId: 'user-1' });
       mockPrismaService.address.findFirst.mockResolvedValue({ regionId: 'region-dest' });
       mockPrismaService.shippingCapability.findUnique.mockResolvedValue({ supported: true });
       
@@ -110,9 +110,21 @@ describe('OrdersService', () => {
       // Simulate the array returned by the $transaction
       mockPrismaService.$transaction.mockResolvedValue([expectedOrder, expectedListingUpdate]);
 
-      const result = await service.createOrder('buyer-1', 'listing-1', 10, 'app-1', 'fee-1');
+      const result = await service.createOrder('user-1', 'listing-1', 10, 'app-1', 'fee-1');
 
       expect(result).toEqual(expectedOrder);
+      // Buyer profile must be resolved from the authenticated userId, not the body
+      expect(mockPrismaService.buyerProfile.findUnique).toHaveBeenCalledWith({ where: { userId: 'user-1' } });
+    });
+
+    it('should throw NotFoundException if no buyer profile exists for the user', async () => {
+      mockPrismaService.appointment.findUnique.mockResolvedValue({ id: 'app-1', status: 'COMPLETED' });
+      mockPrismaService.listing.findUnique.mockResolvedValue({ id: 'listing-1', stock: 50, farmerProfileId: 'farmer-1' });
+      mockPrismaService.buyerProfile.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.createOrder('user-1', 'listing-1', 10, 'app-1', 'fee-1')
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
