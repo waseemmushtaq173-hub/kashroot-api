@@ -9,6 +9,7 @@ import { EscrowStatus } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { LedgerService } from '../orders/ledger.service';
+import { EscrowVoiceNotificationService } from './escrow-voice-notification.service';
 
 /**
  * EscrowService — multi-vertical escrow vault.
@@ -33,6 +34,7 @@ export class EscrowService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerService,
+    private readonly voice: EscrowVoiceNotificationService,
   ) {}
 
   /**
@@ -90,6 +92,15 @@ export class EscrowService {
     });
 
     this.logger.log(`Escrow HELD: order=${orderId} amount=${amount} ${order.currency}`);
+
+    // Spoken trust loop — best-effort, never blocks or reverses the committed hold.
+    await this.voice.dispatchEscrowNotification({
+      farmerProfileId: order.farmerProfileId,
+      event: 'ESCROW_HELD',
+      amount,
+      currency: order.currency,
+    });
+
     return hold;
   }
 
@@ -147,6 +158,14 @@ export class EscrowService {
     });
 
     this.logger.log(`Escrow RELEASED: order=${orderId} amount=${amount} ${hold.currency}`);
+
+    await this.voice.dispatchEscrowNotification({
+      farmerProfileId: hold.farmerProfileId,
+      event: 'ESCROW_RELEASED',
+      amount,
+      currency: hold.currency,
+    });
+
     return released;
   }
 
@@ -196,6 +215,14 @@ export class EscrowService {
     });
 
     this.logger.log(`Escrow REFUNDED: order=${orderId} amount=${amount} ${hold.currency}`);
+
+    await this.voice.dispatchEscrowNotification({
+      farmerProfileId: hold.farmerProfileId,
+      event: 'ESCROW_REFUNDED',
+      amount,
+      currency: hold.currency,
+    });
+
     return refunded;
   }
 

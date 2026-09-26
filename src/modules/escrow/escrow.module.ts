@@ -4,17 +4,19 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { LedgerService } from '../orders/ledger.service';
 import { EscrowController } from './escrow.controller';
 import { EscrowService } from './escrow.service';
+import { EscrowVoiceNotificationService } from './escrow-voice-notification.service';
 
 /**
  * EscrowModule bundles the vault (EscrowService) with the append-only
- * LedgerService (reused from the orders module — now wired live). LedgerService
- * is provided here so escrow state changes and their audit entries share one DI
- * scope and one transaction.
+ * LedgerService (reused from the orders module — now wired live) and the
+ * multilingual spoken-audit dispatcher (EscrowVoiceNotificationService).
+ * LedgerService is provided here so escrow state changes and their audit entries
+ * share one DI scope and one transaction.
  */
 @Module({
   imports: [PrismaModule],
   controllers: [EscrowController],
-  providers: [EscrowService, LedgerService],
+  providers: [EscrowService, LedgerService, EscrowVoiceNotificationService],
   exports: [EscrowService, LedgerService],
 })
 export class EscrowModule {}

@@ -4,6 +4,7 @@ import { EscrowStatus } from '@prisma/client';
 
 import { EscrowService } from './escrow.service';
 import { LedgerService } from '../orders/ledger.service';
+import { EscrowVoiceNotificationService } from './escrow-voice-notification.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 describe('EscrowService', () => {
@@ -21,6 +22,7 @@ describe('EscrowService', () => {
   };
 
   const mockLedger = { createEntry: jest.fn(), queryByOrder: jest.fn() };
+  const mockVoice = { dispatchEscrowNotification: jest.fn() };
 
   const ORDER_ID = 'order-1';
   const baseOrder = {
@@ -38,6 +40,7 @@ describe('EscrowService', () => {
         EscrowService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: LedgerService, useValue: mockLedger },
+        { provide: EscrowVoiceNotificationService, useValue: mockVoice },
       ],
     }).compile();
 
@@ -64,6 +67,9 @@ describe('EscrowService', () => {
           relatedOrderId: ORDER_ID,
         }),
         expect.anything(),
+      );
+      expect(mockVoice.dispatchEscrowNotification).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'ESCROW_HELD', farmerProfileId: 'farmer-1', amount: 1450 }),
       );
     });
 
