@@ -1,7 +1,11 @@
-import { Controller, Get, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Controller, Get, Post, HttpCode, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 
 import { Public } from '../../common/decorators/public.decorator';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { UserRole } from '../auth/user-role.enum';
 import { MandiPricesService } from './mandi-prices.service';
 import { QueryMandiPricesDto } from './dto/query-mandi-prices.dto';
 
@@ -21,5 +25,20 @@ export class MandiPricesController {
   @ApiOperation({ summary: 'Official APMC physical mandi benchmark feed (public)' })
   findAll(@Query() query: QueryMandiPricesDto) {
     return this.mandiPrices.findAll(query);
+  }
+
+  /**
+   * POST /api/v1/mandi-prices/sync   (global prefix adds /api/v1)
+   * Admin-only: ingest the official Agmarknet / APMC daily bulletin. Not public —
+   * this writes to the benchmark feed and is triggered from the Admin Dashboard.
+   */
+  @Post('sync')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.PLATFORM_ADMIN, UserRole.REGIONAL_ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Sync official APMC bulletin (ADMIN)' })
+  sync() {
+    return this.mandiPrices.syncOfficialApmcData();
   }
 }
