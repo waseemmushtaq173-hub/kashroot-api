@@ -882,25 +882,31 @@ model WeatherAlert {
   @@map("weather_alerts")
 }
 
+// Official APMC wholesale auction benchmarks — read-only market intelligence.
+// NOT marketplace/product rates; deliberately decoupled from Listing pricing.
 model MandiPrice {
   id             String         @id @default(uuid())
-  regionId       String         @map("region_id")
+  regionId       String?        @map("region_id")
   categoryId     String?        @map("category_id")
-  commodity      String
+  mandiName      String         @map("mandi_name") // physical APMC market, e.g. 'Sopore Fruit Mandi'
+  commodity      String         // e.g. 'Apple - Delicious', 'Walnut'
   variety        String?
-  pricePerUnit   Decimal        @map("price_per_unit") @db.Decimal(12, 4)
+  minPrice       Decimal        @map("min_price") @db.Decimal(12, 4)
+  maxPrice       Decimal        @map("max_price") @db.Decimal(12, 4)
+  modalPrice     Decimal        @map("modal_price") @db.Decimal(12, 4)
   unitOfSale     String         @map("unit_of_sale")
   currency       String         @default("INR")
   trendIndicator TrendIndicator @default(STABLE) @map("trend_indicator")
-  audioPrompts   Json?          @map("audio_prompts") // { "KASHMIRI": url, "URDU": url, ... }
+  audioPrompts   Json?          @map("audio_prompts") // { "KASHMIRI": url, "URDU": url, "HINDI": url }
   recordedAt     DateTime       @map("recorded_at")
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
 
-  region   Region    @relation(fields: [regionId], references: [id])
+  region   Region?   @relation(fields: [regionId], references: [id])
   category Category? @relation(fields: [categoryId], references: [id])
 
   @@index([regionId, commodity, recordedAt])
+  @@index([mandiName, commodity, recordedAt])
   @@map("mandi_prices")
 }
 
