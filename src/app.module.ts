@@ -7,6 +7,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { RbacModule } from './modules/rbac/rbac.module';
 import { ListingsModule } from './modules/listings/listings.module';
 import { OrdersModule } from './modules/orders/orders.module';
+import { AiAssistantModule } from './modules/ai-assistant/ai-assistant.module';
 import { PrismaService } from './prisma/prisma.service';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -42,6 +43,7 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
     RbacModule,
     ListingsModule,
     OrdersModule,
+    AiAssistantModule,
     // Future modules added here:
     // AppointmentsModule,
     // PaymentsModule, PayoutsModule, ShipmentsModule,

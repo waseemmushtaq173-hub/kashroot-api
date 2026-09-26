@@ -55,6 +55,7 @@
     "@prisma/cli": "^8.0.0-rc.15",
     "@types/cookie-parser": "^1.4.6",
     "@types/jest": "^29.5.14",
+    "@types/multer": "^1.4.13",
     "@types/node": "^20.0.0",
     "@types/passport-google-oauth20": "^2.0.0",
     "@types/passport-jwt": "^3.0.0",

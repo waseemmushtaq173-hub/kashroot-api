@@ -35,6 +35,7 @@ model User {
   auditLogsActed     AuditLog[]           @relation("ActorLogs")
   farmerProfile      FarmerProfile?
   buyerProfile       BuyerProfile?
+  expertProfile      ExpertProfile?
   addresses          Address[]
   appointmentNotes   AppointmentNote[]
   orderStatusChanges OrderStatusHistory[]
@@ -161,6 +162,8 @@ model Region {
   shippingCapabilities ShippingCapability[] @relation("DestinationRegion")
   ordersOrigin         Order[]              @relation("OrderOriginRegion")
   ordersDestination    Order[]              @relation("OrderDestinationRegion")
+  weatherAlerts        WeatherAlert[]
+  mandiPrices          MandiPrice[]
 
   @@map("regions")
 }
@@ -189,22 +192,24 @@ model Address {
 // ============================================================
 
 model FarmerProfile {
-  id                 String    @id @default(uuid())
-  userId             String    @unique @map("user_id")
-  displayName        String    @map("display_name")
+  id                 String            @id @default(uuid())
+  userId             String            @unique @map("user_id")
+  displayName        String            @map("display_name")
   bio                String?
-  originRegionId     String?   @map("origin_region_id")
-  kycStatus          KycStatus @default(PENDING) @map("kyc_status")
-  kycRejectionReason String?   @map("kyc_rejection_reason")
-  kycSubmittedAt     DateTime? @map("kyc_submitted_at")
-  kycReviewedAt      DateTime? @map("kyc_reviewed_at")
-  kycReviewedBy      String?   @map("kyc_reviewed_by")
-  payoutAccountRef   String?   @map("payout_account_ref")
-  trustScore         Decimal   @default(50) @map("trust_score") @db.Decimal(5, 2)
-  noShowCount        Int       @default(0) @map("no_show_count")
-  isFlaggedForReview Boolean   @default(false) @map("is_flagged_for_review")
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
+  originRegionId     String?           @map("origin_region_id")
+  kycStatus          KycStatus         @default(PENDING) @map("kyc_status")
+  kycRejectionReason String?           @map("kyc_rejection_reason")
+  kycSubmittedAt     DateTime?         @map("kyc_submitted_at")
+  kycReviewedAt      DateTime?         @map("kyc_reviewed_at")
+  kycReviewedBy      String?           @map("kyc_reviewed_by")
+  payoutAccountRef   String?           @map("payout_account_ref")
+  trustScore         Decimal           @default(50) @map("trust_score") @db.Decimal(5, 2)
+  noShowCount        Int               @default(0) @map("no_show_count")
+  isFlaggedForReview Boolean           @default(false) @map("is_flagged_for_review")
+  preferredLanguage  PreferredLanguage @default(KASHMIRI) @map("preferred_language")
+  voiceModeEnabled   Boolean           @default(true) @map("voice_mode_enabled")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
 
   user                 User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
   originRegion         Region?                   @relation(fields: [originRegionId], references: [id])
@@ -337,14 +342,15 @@ model BuyerFarmerRelationship {
 // ============================================================
 
 model Category {
-  id               String     @id @default(uuid())
+  id               String       @id @default(uuid())
   name             String
-  slug             String     @unique
-  parentCategoryId String?    @map("parent_category_id")
-  iconUrl          String?    @map("icon_url")
-  parent           Category?  @relation("CategoryTree", fields: [parentCategoryId], references: [id])
-  children         Category[] @relation("CategoryTree")
+  slug             String       @unique
+  parentCategoryId String?      @map("parent_category_id")
+  iconUrl          String?      @map("icon_url")
+  parent           Category?    @relation("CategoryTree", fields: [parentCategoryId], references: [id])
+  children         Category[]   @relation("CategoryTree")
   listings         Listing[]
+  mandiPrices      MandiPrice[]
 
   @@map("categories")
 }
@@ -366,6 +372,7 @@ model Listing {
   harvestEnd      DateTime?     @map("harvest_end")
   qualityGrade    String?       @map("quality_grade") // 'A', 'A+', 'Premium'
   status          ListingStatus @default(DRAFT)
+  audioPrompts    Json?         @map("audio_prompts") // { "KASHMIRI": url, "URDU": url, ... }
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
@@ -377,6 +384,7 @@ model Listing {
   appointments   Appointment[]
   orders         Order[]
   stock          Int
+
   @@index([originRegionId, categoryId, status])
   @@map("listings")
 }
@@ -825,4 +833,88 @@ model FeeConfigVersion {
   orders Order[]
 
   @@map("fee_config_versions")
+}
+
+// ============================================================
+// ACCESSIBILITY / VOICE-FIRST (illiterate-user support)
+// ============================================================
+
+enum PreferredLanguage {
+  KASHMIRI
+  URDU
+  HINDI
+  ENGLISH
+
+  @@map("preferred_language")
+}
+
+enum TrendIndicator {
+  UP
+  DOWN
+  STABLE
+
+  @@map("trend_indicator")
+}
+
+enum WeatherSeverity {
+  INFO
+  WARNING
+  CRITICAL
+
+  @@map("weather_severity")
+}
+
+model WeatherAlert {
+  id            String          @id @default(uuid())
+  regionId      String          @map("region_id")
+  title         String
+  message       String
+  severityLevel WeatherSeverity @default(INFO) @map("severity_level")
+  audioPrompts  Json?           @map("audio_prompts") // { "KASHMIRI": url, "URDU": url, ... }
+  effectiveFrom DateTime        @map("effective_from")
+  effectiveTo   DateTime?       @map("effective_to")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  region Region @relation(fields: [regionId], references: [id])
+
+  @@index([regionId, severityLevel])
+  @@map("weather_alerts")
+}
+
+model MandiPrice {
+  id             String         @id @default(uuid())
+  regionId       String         @map("region_id")
+  categoryId     String?        @map("category_id")
+  commodity      String
+  variety        String?
+  pricePerUnit   Decimal        @map("price_per_unit") @db.Decimal(12, 4)
+  unitOfSale     String         @map("unit_of_sale")
+  currency       String         @default("INR")
+  trendIndicator TrendIndicator @default(STABLE) @map("trend_indicator")
+  audioPrompts   Json?          @map("audio_prompts") // { "KASHMIRI": url, "URDU": url, ... }
+  recordedAt     DateTime       @map("recorded_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  region   Region    @relation(fields: [regionId], references: [id])
+  category Category? @relation(fields: [categoryId], references: [id])
+
+  @@index([regionId, commodity, recordedAt])
+  @@map("mandi_prices")
+}
+
+model ExpertProfile {
+  id             String   @id @default(uuid())
+  userId         String   @unique @map("user_id")
+  displayName    String   @map("display_name")
+  specialization String?
+  bio            String?
+  audioPrompts   Json?    @map("audio_prompts") // { "KASHMIRI": url, "URDU": url, ... }
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("expert_profiles")
 }
