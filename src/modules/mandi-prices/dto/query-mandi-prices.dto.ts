@@ -12,4 +12,9 @@ export class QueryMandiPricesDto {
   @IsOptional()
   @IsString()
   mandiName?: string;
+
+  @ApiPropertyOptional({ example: 'Apple - Delicious' })
+  @IsOptional()
+  @IsString()
+  commodity?: string;
 }

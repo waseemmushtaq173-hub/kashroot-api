@@ -17,14 +17,15 @@ export class MandiPricesController {
   /**
    * GET /api/v1/mandi-prices   (global prefix adds /api/v1)
    * Public, read-only feed of official regulated physical APMC mandi benchmarks,
-   * with trend indicators and per-language audio prompts for the voice-first client.
-   * Filterable by `regionId` or `mandiName`.
+   * returned as picture-driven listic cards (trend arrow/colour + per-language
+   * audio prompts) for the voice-first client. Filterable by `regionId`,
+   * `commodity`, or `mandiName`.
    */
   @Get()
   @Public()
-  @ApiOperation({ summary: 'Official APMC physical mandi benchmark feed (public)' })
+  @ApiOperation({ summary: 'Official APMC mandi listic price cards (public)' })
   findAll(@Query() query: QueryMandiPricesDto) {
-    return this.mandiPrices.findAll(query);
+    return this.mandiPrices.findLatestRegionalPrices(query);
   }
 
   /**
