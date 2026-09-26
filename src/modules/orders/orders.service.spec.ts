@@ -12,7 +12,10 @@ describe('OrdersService', () => {
   const mockPrismaService = {
     listing: { findUnique: jest.fn() },
     order: { findUnique: jest.fn(), create: jest.fn() },
-    appointment: { findUnique: jest.fn() }, 
+    appointment: { findUnique: jest.fn() },
+    buyerProfile: { findUnique: jest.fn() },
+    address: { findFirst: jest.fn() },
+    shippingCapability: { findUnique: jest.fn() },
   };
 
   beforeEach(async () => {
@@ -61,8 +64,23 @@ describe('OrdersService', () => {
       mockPrismaService.appointment.findUnique.mockResolvedValue({ id: 'app-1', status: 'COMPLETED' });
       mockPrismaService.listing.findUnique.mockResolvedValue({ 
         id: 'listing-1', 
-        stock: 5 // Stock is less than the requested quantity of 10
+        stock: 5 
       });
+
+      await expect(
+        service.createOrder('buyer-1', 'listing-1', 10, 'app-1', 'fee-1')
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException if shipping route is unsupported', async () => {
+      mockPrismaService.appointment.findUnique.mockResolvedValue({ id: 'app-1', status: 'COMPLETED' });
+      mockPrismaService.listing.findUnique.mockResolvedValue({ id: 'listing-1', stock: 50, farmerProfileId: 'farmer-1' });
+      
+      mockPrismaService.buyerProfile.findUnique.mockResolvedValue({ id: 'buyer-1', userId: 'user-1' });
+      mockPrismaService.address.findFirst.mockResolvedValue({ regionId: 'region-dest' });
+      
+      // Simulate unsupported trade route (Gate 2 fails)
+      mockPrismaService.shippingCapability.findUnique.mockResolvedValue({ supported: false });
 
       await expect(
         service.createOrder('buyer-1', 'listing-1', 10, 'app-1', 'fee-1')
@@ -77,9 +95,13 @@ describe('OrdersService', () => {
         pricePerUnit: 100,
         currency: 'USD',
         farmerProfileId: 'farmer-1',
-        stock: 50, // Added stock to allow the 10 quantity order to pass
+        stock: 50,
       };
       mockPrismaService.listing.findUnique.mockResolvedValue(mockListing);
+      
+      mockPrismaService.buyerProfile.findUnique.mockResolvedValue({ id: 'buyer-1', userId: 'user-1' });
+      mockPrismaService.address.findFirst.mockResolvedValue({ regionId: 'region-dest' });
+      mockPrismaService.shippingCapability.findUnique.mockResolvedValue({ supported: true });
       
       const expectedOrder = { id: 'order-1', subtotal: 1000 };
       mockPrismaService.order.create.mockResolvedValue(expectedOrder);

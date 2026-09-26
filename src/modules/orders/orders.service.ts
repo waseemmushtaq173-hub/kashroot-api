@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service'; 
-import { OrderStatus, TradeDirection } from '@prisma/client'; // Add AppointmentStatus here if it exists in your schema
+import { OrderStatus, TradeDirection } from '@prisma/client';
 
 @Injectable()
 export class OrdersService {
@@ -38,7 +38,6 @@ export class OrdersService {
       throw new NotFoundException(`Appointment with ID ${appointmentId} not found`);
     }
 
-    // Assuming the status is stored as a string or enum 'COMPLETED'
     if (appointment.status !== 'COMPLETED') {
       throw new BadRequestException('Orders can only be placed after an appointment is completed.');
     }
@@ -51,14 +50,44 @@ export class OrdersService {
     if (!listing) {
       throw new NotFoundException(`Listing with ID ${listingId} not found`);
     }
+
     // --- GATE 3: Inventory Check ---
     if (quantity > listing.stock) {
       throw new BadRequestException(`Requested quantity (${quantity}) exceeds available stock (${listing.stock}).`);
     }
+
+    // --- GATE 2: Region-Pair Check (Shipping Capability) ---
+    const buyer = await this.prisma.buyerProfile.findUnique({
+      where: { id: buyerProfileId }
+    });
+
+    if (!buyer) throw new NotFoundException('Buyer profile not found.');
+
+    const defaultAddress = await this.prisma.address.findFirst({
+      where: { userId: buyer.userId, isDefault: true }
+    });
+
+    if (!defaultAddress || !defaultAddress.regionId) {
+      throw new BadRequestException('Buyer must have a default address with a valid region to place an order.');
+    }
+
+    const capability = await this.prisma.shippingCapability.findUnique({
+      where: {
+        farmerProfileId_destinationRegionId: {
+          farmerProfileId: listing.farmerProfileId,
+          destinationRegionId: defaultAddress.regionId,
+        }
+      }
+    });
+
+    if (!capability || !capability.supported) {
+      throw new BadRequestException('Trade route to your region is not enabled by this farmer.');
+    }
+
     // --- Calculate Financials ---
     const unitPrice = Number(listing.pricePerUnit); 
     const subtotal = unitPrice * quantity;
-    const serviceFee = subtotal * 0.05; // 5% KashRoot platform fee
+    const serviceFee = subtotal * 0.05; 
     const total = subtotal + serviceFee;
 
     // --- Create Order ---
