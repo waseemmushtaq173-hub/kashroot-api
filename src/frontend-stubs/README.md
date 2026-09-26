@@ -112,7 +112,12 @@ maps to a role-switched root navigator. See `AppShellExample.tsx`.
   (AgroGuard counterfeit detection; TESTER role)
 - `FarmingKnowledgeFeed` → `GET /api/v1/advisories` (public agronomy knowledge feed);
   authoring via `POST /api/v1/admin/advisories` (PLATFORM_ADMIN / REGIONAL_ADMIN / EXPERT)
-  and `POST /api/v1/admin/advisories/seed`
+  and `POST /api/v1/admin/advisories/seed`. Live government knowledge is ingested by
+  `GovAdvisorySyncService` — a nightly `@Cron` sync of official SKUAST-K / Dept. of
+  Horticulture / ICAR alerts, also triggerable on demand via
+  `POST /api/v1/admin/advisories/sync`. Synced items carry the `GOV_ALERT` category and
+  `isGovVerified: true`, rendering the blue "🏛️ Official Gov Advisory" badge; the feed
+  orders gov-verified advisories first, then newest.
 
 ## English UI + 4-Language Spoken Audio
 

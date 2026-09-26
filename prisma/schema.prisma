@@ -1101,22 +1101,26 @@ enum AdvisoryCategory {
   DISEASE_PEST
   FERTILIZER_SOIL
   MODERN_TECH
+  GOV_ALERT
 
   @@map("advisory_category")
 }
 
 model FarmingAdvisory {
-  id                String           @id @default(uuid())
-  topic             String // e.g. "Apple Scab Spray Schedule"
-  category          AdvisoryCategory
-  content           String // concise agronomy guidance
-  applicableCrops   String[]         @map("applicable_crops")
-  applicableRegions String[]         @map("applicable_regions")
-  source            String // e.g. "SKUAST-K / Horticulture Dept"
-  audioPrompts      Json?            @map("audio_prompts") // pre-rendered TTS per language
-  createdAt         DateTime         @default(now()) @map("created_at")
-  updatedAt         DateTime         @updatedAt @map("updated_at")
+  id                 String           @id @default(uuid())
+  topic              String // e.g. "Apple Scab Spray Schedule"
+  category           AdvisoryCategory
+  content            String // concise agronomy guidance
+  applicableCrops    String[]         @map("applicable_crops")
+  applicableRegions  String[]         @map("applicable_regions")
+  isGovVerified      Boolean          @default(false) @map("is_gov_verified")
+  sourceOrganization String           @map("source_organization") // e.g. "SKUAST-Kashmir", "ICAR"
+  sourceUrl          String?          @map("source_url") // link to the official mandate
+  audioPrompts       Json?            @map("audio_prompts") // pre-rendered TTS per language
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
 
   @@index([category])
+  @@index([isGovVerified, updatedAt])
   @@map("farming_advisories")
 }

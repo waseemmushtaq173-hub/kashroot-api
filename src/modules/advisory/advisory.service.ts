@@ -34,6 +34,7 @@ const CATEGORY_KEYWORDS: Record<AdvisoryCategory, string[]> = {
   ],
   [AdvisoryCategory.FERTILIZER_SOIL]: ['fertilizer', 'fertiliser', 'urea', 'soil', 'nutrient', 'manure'],
   [AdvisoryCategory.MODERN_TECH]: ['prune', 'pruning', 'high-density', 'trellis', 'drip', 'technology'],
+  [AdvisoryCategory.GOV_ALERT]: ['alert', 'warning', 'advisory', 'outbreak', 'notice'],
 };
 
 /**
@@ -61,15 +62,63 @@ export class AdvisoryService {
         content: dto.content,
         applicableCrops: dto.applicableCrops,
         applicableRegions: dto.applicableRegions ?? [],
-        source: dto.source,
+        isGovVerified: dto.isGovVerified ?? false,
+        sourceOrganization: dto.sourceOrganization,
+        sourceUrl: dto.sourceUrl ?? null,
         audioPrompts: audioPrompts as unknown as Prisma.InputJsonObject,
       },
     });
   }
 
   /**
-   * Public knowledge feed, newest first, filterable by category / crop / region.
-   * Crop and region are matched against the advisory's `applicable*` arrays.
+   * Upsert a government advisory keyed by topic (used by the live gov-sync job so
+   * a re-run refreshes the same alert rather than duplicating it). Always marked
+   * `isGovVerified`. Returns whether the row was newly created.
+   */
+  async upsertGovAdvisory(input: {
+    topic: string;
+    category: AdvisoryCategory;
+    content: string;
+    applicableCrops: string[];
+    applicableRegions: string[];
+    sourceOrganization: string;
+    sourceUrl?: string | null;
+  }): Promise<{ advisory: FarmingAdvisory; created: boolean }> {
+    const audioPrompts = this.buildAudioPrompts(input.topic, input.content);
+    const existing = await this.prisma.farmingAdvisory.findFirst({
+      where: { topic: input.topic },
+      select: { id: true },
+    });
+
+    const data = {
+      category: input.category,
+      content: input.content,
+      applicableCrops: input.applicableCrops,
+      applicableRegions: input.applicableRegions,
+      isGovVerified: true,
+      sourceOrganization: input.sourceOrganization,
+      sourceUrl: input.sourceUrl ?? null,
+      audioPrompts: audioPrompts as unknown as Prisma.InputJsonObject,
+    };
+
+    if (existing) {
+      const advisory = await this.prisma.farmingAdvisory.update({
+        where: { id: existing.id },
+        data,
+      });
+      return { advisory, created: false };
+    }
+
+    const advisory = await this.prisma.farmingAdvisory.create({
+      data: { topic: input.topic, ...data },
+    });
+    return { advisory, created: true };
+  }
+
+  /**
+   * Public knowledge feed. Filterable by category / crop / region and ordered so
+   * verified government advisories surface first, then newest — the trust-and-
+   * freshness ordering the Farmer Portal feed relies on.
    */
   async findAdvisories(query: QueryAdvisoryDto): Promise<FarmingAdvisory[]> {
     const where: Prisma.FarmingAdvisoryWhereInput = {};
@@ -79,7 +128,7 @@ export class AdvisoryService {
 
     return this.prisma.farmingAdvisory.findMany({
       where,
-      orderBy: { updatedAt: 'desc' },
+      orderBy: [{ isGovVerified: 'desc' }, { updatedAt: 'desc' }],
     });
   }
 
@@ -174,7 +223,7 @@ export class AdvisoryService {
           'spots to appear — scab spreads fastest in cool, wet spring weather.',
         applicableCrops: ['Apple'],
         applicableRegions: ['Sopore', 'Shopian', 'Baramulla', 'Anantnag'],
-        source: 'SKUAST-K / J&K Horticulture Department',
+        sourceOrganization: 'SKUAST-Kashmir',
       },
       {
         topic: 'Superstar (GA3) Leaf-Shine Foliar Spray',
@@ -186,7 +235,7 @@ export class AdvisoryService {
           'cool morning and never exceed the labelled dose.',
         applicableCrops: ['Apple'],
         applicableRegions: ['Sopore', 'Shopian'],
-        source: 'FIL Industries product label / SKUAST-K',
+        sourceOrganization: 'FIL Industries / SKUAST-Kashmir',
       },
       {
         topic: 'San Jose Scale and Mite Control',
@@ -198,7 +247,7 @@ export class AdvisoryService {
           'to avoid resistance.',
         applicableCrops: ['Apple', 'Pear', 'Cherry'],
         applicableRegions: ['Baramulla', 'Anantnag'],
-        source: 'SKUAST-K Division of Entomology',
+        sourceOrganization: 'SKUAST-Kashmir Division of Entomology',
       },
       {
         topic: 'High-Density Apple Planting (Modern Orchard)',
@@ -210,7 +259,7 @@ export class AdvisoryService {
           'and prune lightly every year to keep the canopy open to light.',
         applicableCrops: ['Apple'],
         applicableRegions: ['Shopian', 'Sopore'],
-        source: 'SKUAST-K High-Density Plantation Programme',
+        sourceOrganization: 'SKUAST-Kashmir High-Density Plantation Programme',
       },
       {
         topic: 'Balanced Orchard Soil Nutrition',
@@ -222,7 +271,7 @@ export class AdvisoryService {
           'report rather than guesswork. Over-use of nitrogen delays fruit colouring.',
         applicableCrops: ['Apple', 'Walnut'],
         applicableRegions: ['Sopore', 'Anantnag', 'Baramulla'],
-        source: 'J&K Department of Agriculture / SKUAST-K',
+        sourceOrganization: 'J&K Department of Agriculture',
       },
     ];
 

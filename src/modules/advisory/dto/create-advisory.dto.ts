@@ -2,9 +2,11 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayNotEmpty,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsOptional,
   IsString,
+  IsUrl,
   MaxLength,
 } from 'class-validator';
 import { AdvisoryCategory } from '@prisma/client';
@@ -45,8 +47,25 @@ export class CreateAdvisoryDto {
   @IsString({ each: true })
   applicableRegions?: string[];
 
-  @ApiProperty({ example: 'SKUAST-K / J&K Horticulture Department' })
+  @ApiProperty({ example: 'SKUAST-Kashmir' })
   @IsString()
   @MaxLength(160)
-  source!: string;
+  sourceOrganization!: string;
+
+  @ApiPropertyOptional({
+    example: 'https://www.skuastkashmir.ac.in/advisories/apple-scab',
+    description: 'Link back to the official government mandate.',
+  })
+  @IsOptional()
+  @IsUrl()
+  @MaxLength(500)
+  sourceUrl?: string;
+
+  @ApiPropertyOptional({
+    default: false,
+    description: 'True when this advisory came from a verified government source.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  isGovVerified?: boolean;
 }

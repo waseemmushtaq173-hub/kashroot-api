@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD, APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { BullModule } from '@nestjs/bullmq';
 import { AuthModule } from './modules/auth/auth.module';
 import { RbacModule } from './modules/rbac/rbac.module';
@@ -23,6 +24,9 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
   imports: [
     // Config — loaded first, available everywhere
     ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
+
+    // Cron scheduling — powers the nightly live government advisory sync
+    ScheduleModule.forRoot(),
 
     // Rate limiting — global via ThrottlerGuard below
     ThrottlerModule.forRootAsync({

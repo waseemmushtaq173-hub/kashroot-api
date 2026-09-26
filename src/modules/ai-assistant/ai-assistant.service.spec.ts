@@ -148,12 +148,13 @@ describe('AiAssistantService (voice-to-voice pipeline)', () => {
       expect(res.replyText).toContain('out for delivery');
     });
 
-    it('agronomy intent: grounds an apple-scab spray query in a verified advisory', async () => {
+    it('agronomy intent: grounds an apple-scab spray query in a gov-verified advisory', async () => {
       withTranscript('how do I spray for apple scab disease');
       mockAdvisory.searchRelevantAdvisory.mockResolvedValue({
-        topic: 'Apple Scab Spray Schedule (Green Tip to Pink Bud)',
-        content: 'Spray Mancozeb 75% WP at 3 g per litre of water at green-tip.',
-        source: 'SKUAST-K / J&K Horticulture Department',
+        topic: 'SKUAST-K Alert: Apple Scab Infection Window Open',
+        content: 'Apply a protective Mancozeb 75% WP spray at 3 g per litre before the rain.',
+        isGovVerified: true,
+        sourceOrganization: 'SKUAST-Kashmir',
       });
 
       const res = await service.handleVoiceQuery(input());
@@ -162,9 +163,11 @@ describe('AiAssistantService (voice-to-voice pipeline)', () => {
         'how do I spray for apple scab disease',
         'reg-1',
       );
-      expect(res.replyText).toContain('Apple Scab Spray Schedule');
+      // A government-verified advisory leads with the official-authority marker.
+      expect(res.replyText).toContain('According to the latest advisory from SKUAST-Kashmir');
       expect(res.replyText).toContain('Mancozeb');
-      expect(res.replyText).toContain('SKUAST-K');
+      // The whole exchange is still synthesized back into the farmer's language.
+      expect(res.audioReplyUrl).toMatch(/^https:\/\/cdn\.mock\.local\/tts\/english\/.+\.mp3$/);
       // Agronomy short-circuits the other intents.
       expect(mockPrisma.mandiPrice.findFirst).not.toHaveBeenCalled();
     });

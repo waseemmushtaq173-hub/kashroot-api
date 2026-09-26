@@ -110,12 +110,15 @@ export type AdvisoryCategory =
   | 'SPRAY_SCHEDULE'
   | 'DISEASE_PEST'
   | 'FERTILIZER_SOIL'
-  | 'MODERN_TECH';
+  | 'MODERN_TECH'
+  | 'GOV_ALERT';
 
 /**
  * One verified farming advisory from GET /api/v1/advisories. Visual text stays
  * English; `audioPrompts` carries the per-language spoken clip the knowledge
  * feed plays via lib/spoken-audio.ts (a language key may be absent).
+ * `isGovVerified` advisories are live-synced from official bodies (SKUAST-K,
+ * ICAR, Dept. of Horticulture) and carry an "Official Gov Advisory" badge.
  */
 export interface FarmingAdvisory {
   id: string;
@@ -124,7 +127,9 @@ export interface FarmingAdvisory {
   content: string;
   applicableCrops: string[];
   applicableRegions: string[];
-  source: string;
+  isGovVerified: boolean;
+  sourceOrganization: string;
+  sourceUrl?: string | null;
   audioPrompts?: Partial<Record<PreferredLanguage, string>> | null;
   createdAt: string; // ISO timestamp
   updatedAt: string; // ISO timestamp

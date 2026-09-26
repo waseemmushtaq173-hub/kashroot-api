@@ -22,6 +22,7 @@ const CATEGORY_VISUALS: Record<AdvisoryCategory, { icon: string; label: string; 
   DISEASE_PEST: { icon: '🐛', label: 'Disease & pest', tint: 'text-red-700 bg-red-50' },
   FERTILIZER_SOIL: { icon: '🌱', label: 'Fertilizer & soil', tint: 'text-amber-700 bg-amber-50' },
   MODERN_TECH: { icon: '🚜', label: 'Modern tech', tint: 'text-emerald-700 bg-emerald-50' },
+  GOV_ALERT: { icon: '📢', label: 'Government alert', tint: 'text-blue-700 bg-blue-50' },
 };
 
 /** Quick spoken prompts a farmer can tap instead of typing (fires the assistant). */
@@ -110,7 +111,12 @@ function AdvisoryCard({
 
   return (
     <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-2 flex items-center gap-2">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        {advisory.isGovVerified ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-2.5 py-0.5 text-xs font-semibold text-white">
+            <span aria-hidden>🏛️</span> Official Gov Advisory
+          </span>
+        ) : null}
         <span
           className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${visual.tint}`}
         >
@@ -123,7 +129,22 @@ function AdvisoryCard({
 
       <h2 className="text-lg font-bold text-slate-800">{advisory.topic}</h2>
       <p className="mt-1 text-slate-700">{advisory.content}</p>
-      <p className="mt-2 text-xs italic text-slate-400">Source: {advisory.source}</p>
+      <p className="mt-2 text-xs italic text-slate-400">
+        Source: {advisory.sourceOrganization}
+        {advisory.sourceUrl ? (
+          <>
+            {' · '}
+            <a
+              href={advisory.sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-blue-600 underline"
+            >
+              official mandate
+            </a>
+          </>
+        ) : null}
+      </p>
 
       <button
         type="button"
@@ -147,6 +168,22 @@ function AdvisoryCard({
 
 const SAMPLE_ADVISORIES: FarmingAdvisory[] = [
   {
+    id: 'sample-gov',
+    topic: 'SKUAST-K Alert: Apple Scab Infection Window Open',
+    category: 'GOV_ALERT',
+    content:
+      'Cool, wet weather over the next 72 hours has opened a high-risk scab infection ' +
+      'window. Apply a protective Mancozeb 75% WP spray at 3 g per litre before the rain.',
+    applicableCrops: ['Apple'],
+    applicableRegions: ['Sopore', 'Shopian'],
+    isGovVerified: true,
+    sourceOrganization: 'SKUAST-Kashmir',
+    sourceUrl: 'https://www.skuastkashmir.ac.in/advisories/apple-scab-window',
+    audioPrompts: { KASHMIRI: 'https://cdn.mock.local/tts/advisory/kashmiri/gov-scab-k.mp3' },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
     id: 'sample-scab',
     topic: 'Apple Scab Spray Schedule (Green Tip to Pink Bud)',
     category: 'SPRAY_SCHEDULE',
@@ -155,7 +192,9 @@ const SAMPLE_ADVISORIES: FarmingAdvisory[] = [
       'Repeat at pink-bud and petal-fall, and again after every heavy rain.',
     applicableCrops: ['Apple'],
     applicableRegions: ['Sopore', 'Shopian'],
-    source: 'SKUAST-K / J&K Horticulture Department',
+    isGovVerified: false,
+    sourceOrganization: 'SKUAST-Kashmir',
+    sourceUrl: null,
     audioPrompts: { KASHMIRI: 'https://cdn.mock.local/tts/advisory/kashmiri/scab-k.mp3' },
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -169,7 +208,9 @@ const SAMPLE_ADVISORIES: FarmingAdvisory[] = [
       'gives earlier bearing and higher per-hectare yield than traditional orchards.',
     applicableCrops: ['Apple'],
     applicableRegions: ['Shopian'],
-    source: 'SKUAST-K High-Density Plantation Programme',
+    isGovVerified: false,
+    sourceOrganization: 'SKUAST-Kashmir High-Density Plantation Programme',
+    sourceUrl: null,
     audioPrompts: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

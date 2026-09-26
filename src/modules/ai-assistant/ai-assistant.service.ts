@@ -190,10 +190,20 @@ export class AiAssistantService {
       );
     }
 
+    // Government-verified advisories lead with an official marker so the farmer
+    // hears the authority behind the guidance; others cite the source at the end.
+    if (advisory.isGovVerified) {
+      return (
+        `According to the latest advisory from ${advisory.sourceOrganization}: ` +
+        `${advisory.content} Open the Farming Knowledge feed to listen to the full ` +
+        'official advisory.'
+      );
+    }
+
     return (
       `Here is verified guidance on ${advisory.topic}. ${advisory.content} ` +
-      `This advice is from ${advisory.source}. Open the Farming Knowledge feed to ` +
-      'listen to the full advisory.'
+      `This advice is from ${advisory.sourceOrganization}. Open the Farming Knowledge ` +
+      'feed to listen to the full advisory.'
     );
   }
 

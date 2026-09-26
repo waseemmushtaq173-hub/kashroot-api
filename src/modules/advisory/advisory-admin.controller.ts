@@ -6,6 +6,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole } from '../auth/user-role.enum';
 import { AdvisoryService } from './advisory.service';
+import { GovAdvisorySyncService } from './gov-advisory-sync.service';
 import { CreateAdvisoryDto } from './dto/create-advisory.dto';
 
 /**
@@ -20,7 +21,10 @@ import { CreateAdvisoryDto } from './dto/create-advisory.dto';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.PLATFORM_ADMIN, UserRole.REGIONAL_ADMIN, UserRole.EXPERT)
 export class AdvisoryAdminController {
-  constructor(private readonly advisory: AdvisoryService) {}
+  constructor(
+    private readonly advisory: AdvisoryService,
+    private readonly govSync: GovAdvisorySyncService,
+  ) {}
 
   /** POST /api/v1/admin/advisories — publish one verified advisory. */
   @Post()
@@ -36,5 +40,16 @@ export class AdvisoryAdminController {
   @ApiOperation({ summary: 'Seed baseline SKUAST-K advisories (ADMIN/EXPERT)' })
   seed() {
     return this.advisory.seedInitialAdvisories();
+  }
+
+  /**
+   * POST /api/v1/admin/advisories/sync — manually trigger a live pull of the
+   * latest official government advisories (also runs nightly on a Cron).
+   */
+  @Post('sync')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Sync latest live government advisories (ADMIN/EXPERT)' })
+  sync() {
+    return this.govSync.syncLiveGovAdvisories();
   }
 }
