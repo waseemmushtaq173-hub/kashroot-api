@@ -1,4 +1,5 @@
-import { Injectable, Logger, NotImplementedException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { PreferredLanguage } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
@@ -25,8 +26,10 @@ export interface VoiceQueryInput {
  *   - TTS: Bhashini TTS, with Coqui TTS as the self-hosted fallback.
  *   - Storage: object storage (S3/GCS/MinIO) for the generated reply audio.
  *
- * MVP is synchronous (see AiAssistantController). Each stage is stubbed below so
- * the transport + auth + DI wiring can be verified before the ML plumbing lands.
+ * MVP is synchronous (see AiAssistantController). Each stage below is a
+ * deterministic SIMULATION of the real provider call: the transport + auth + DI
+ * wiring and the end-to-end contract are exercised for real, while the actual
+ * Bhashini / LLM HTTP calls are swapped in later behind these same signatures.
  */
 @Injectable()
 export class AiAssistantService {
@@ -59,28 +62,81 @@ export class AiAssistantService {
     return profile?.preferredLanguage ?? PreferredLanguage.KASHMIRI;
   }
 
-  // --- Pipeline stages (stubbed — free tooling, wired in a follow-up) ---
+  // --- Pipeline stages (simulated free tooling; real HTTP calls wired in a follow-up) ---
 
+  /**
+   * Bhashini ASR simulation. A real call POSTs the audio bytes to the Bhashini
+   * pipeline for `language` (Whisper as the offline fallback) and returns the
+   * decoded transcript. Here we can't decode audio, so we deterministically pick
+   * a representative farmer utterance from the buffer's length — enough to prove
+   * the transcript is data-dependent and to drive the intent router below.
+   */
   private async speechToText(
-    _audio: Buffer,
-    _mimeType: string,
-    _language: PreferredLanguage,
+    audio: Buffer,
+    mimeType: string,
+    language: PreferredLanguage,
   ): Promise<string> {
-    // TODO: POST to Bhashini ASR (Whisper fallback). Returns the transcript.
-    throw new NotImplementedException('STT pipeline not yet implemented.');
+    this.logger.debug(
+      `[STT] simulating Bhashini ASR: ${audio.length} bytes, ${mimeType}, lang=${language}`,
+    );
+
+    // Placeholder utterances the mock ASR can "hear" (English gloss of the
+    // farmer's speech). Real Bhashini returns text in the source language.
+    const utterances = [
+      'What is the mandi rate for apple today?',
+      'Tell me the weather forecast for my region.',
+      'How do I list my walnut harvest for sale?',
+    ];
+    return utterances[audio.length % utterances.length];
   }
 
+  /**
+   * Local LLM simulation. A real call prompts a self-hosted open model (Ollama)
+   * with the transcript + the farmer's own context (region, listings, role) and
+   * asks it to answer in `language`. For the MVP we route on keywords to a small
+   * set of hardcoded, grounded replies.
+   */
   private async askAssistant(
-    _transcript: string,
-    _userId: string,
-    _language: PreferredLanguage,
+    transcript: string,
+    userId: string,
+    language: PreferredLanguage,
   ): Promise<string> {
-    // TODO: prompt a self-hosted open LLM with farmer context; reply in `language`.
-    throw new NotImplementedException('LLM pipeline not yet implemented.');
+    this.logger.debug(`[LLM] simulating local model for user=${userId}, lang=${language}`);
+
+    const q = transcript.toLowerCase();
+
+    if (/\b(mandi|price|rate|bhaav|daam)\b/.test(q)) {
+      return (
+        'Today at Sopore Fruit Mandi, Apple (Delicious) is trading around ' +
+        '₹1,450 per box — up slightly from yesterday. Open the Mandi Prices ' +
+        'screen to hear the full list for your region.'
+      );
+    }
+
+    if (/\b(weather|rain|snow|storm|forecast|mausam)\b/.test(q)) {
+      return (
+        'Light rain is expected in your region over the next two days. Cover ' +
+        'harvested produce and delay spraying. Check the Weather Alerts screen ' +
+        'for the detailed advisory.'
+      );
+    }
+
+    return (
+      "I can help with today's mandi prices, the weather forecast, or listing " +
+      'your produce for sale. Please say "mandi", "weather", or "sell".'
+    );
   }
 
-  private async textToSpeech(_text: string, _language: PreferredLanguage): Promise<string> {
-    // TODO: Bhashini TTS (Coqui fallback) -> upload to object storage -> return URL.
-    throw new NotImplementedException('TTS pipeline not yet implemented.');
+  /**
+   * Bhashini TTS simulation. A real call synthesizes `text` into speech in
+   * `language` (Coqui as the self-hosted fallback), uploads the clip to object
+   * storage, and returns a playable URL. We return a deterministic mock URL,
+   * keyed by language + a hash of the text so identical replies map to one clip.
+   */
+  private async textToSpeech(text: string, language: PreferredLanguage): Promise<string> {
+    const clipId = createHash('sha1').update(`${language}:${text}`).digest('hex').slice(0, 16);
+    this.logger.debug(`[TTS] simulating Bhashini synthesis: lang=${language}, clip=${clipId}`);
+
+    return `https://cdn.mock.local/tts/${language.toLowerCase()}/${clipId}.mp3`;
   }
 }
