@@ -6,7 +6,7 @@
 import type { VoiceQueryResponseDto } from './types';
 
 /** Base URL of the API (global prefix included). Wire to env in the real app. */
-const API_BASE_URL =
+export const API_BASE_URL =
   (typeof process !== 'undefined' && process.env?.API_BASE_URL) ||
   'http://localhost:3000/api/v1';
 

@@ -1,0 +1,49 @@
+/*
+ * Global stylesheet for the Kashroot web client. Import once in the Next.js root
+ * layout (app/layout.tsx): `import '@/frontend-stubs/theme/globals.css'`.
+ *
+ * Tailwind's layers come first; the :root tokens mirror theme.ts for any raw CSS
+ * / Shadcn variables; the keyframes back the VoiceAssistantButton animations.
+ */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Brand + semantic tokens (mirror src/frontend-stubs/theme/theme.ts). */
+  --kr-brand: #1f7a3d;
+  --kr-brand-600: #186531;
+  --kr-saffron: #e8a33d;
+  --kr-trend-up: #1b8a3a;
+  --kr-trend-down: #d32f2f;
+  --kr-trend-stable: #9e9e9e;
+  --kr-buyer: #0d47a1;
+  --kr-slate-900: #0f172a;
+
+  color-scheme: light;
+}
+
+body {
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  background: #f8fafc;
+  color: #1e293b;
+}
+
+/* State animations for the Voice Assistant button (record/think/speak). */
+@keyframes kr-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 0.85;
+  }
+}
+
+@keyframes kr-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

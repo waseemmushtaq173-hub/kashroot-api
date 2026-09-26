@@ -42,3 +42,33 @@ export interface MandiPrice {
   audioPrompts?: Partial<Record<PreferredLanguage, string>> | null;
   recordedAt: string; // ISO timestamp
 }
+
+/**
+ * Lifecycle of the money an escrow is guarding, mirrored from the backend
+ * EscrowStatus enum. Drives the badge + which audit clip auto-plays.
+ */
+export type EscrowStatus =
+  | 'INITIATED'
+  | 'HELD'
+  | 'RELEASED'
+  | 'REFUNDED'
+  | 'DISPUTED';
+
+/**
+ * One escrow milestone as shown in the farmer-facing payment drawer. The visual
+ * fields (amount, status, order) stay English; `audioPrompts` carries the
+ * per-language spoken audit clip the drawer auto-plays for this specific event,
+ * produced by the backend EscrowVoiceNotificationService.
+ */
+export interface EscrowUpdate {
+  orderId: string;
+  status: EscrowStatus;
+  /** Escrowed amount, Prisma Decimal serialized as string. */
+  amount: string;
+  currency: string;
+  /** Short English summary of what just happened, for sighted users. */
+  summary: string;
+  /** Per-language spoken audit clip for THIS event (may be partially filled). */
+  audioPrompts?: Partial<Record<PreferredLanguage, string>> | null;
+  updatedAt: string; // ISO timestamp
+}
