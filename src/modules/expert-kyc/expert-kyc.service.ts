@@ -51,6 +51,66 @@ export class ExpertKycService {
     return { document, verificationStatus: VerificationStatus.PENDING };
   }
 
+  // ─── Admin moderation ──────────────────────────────────────────────
+
+  /** All KYC submissions still awaiting a human decision, oldest first. */
+  async findPendingSubmissions() {
+    return this.prisma.expertKycDocument.findMany({
+      where: { status: VerificationStatus.PENDING },
+      orderBy: { uploadedAt: 'asc' },
+      include: {
+        expertProfile: {
+          select: {
+            id: true,
+            displayName: true,
+            specialization: true,
+            verificationStatus: true,
+            userId: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Admin verdict on one submission. Updates the document (status + notes +
+   * reviewer + timestamp) AND the parent ExpertProfile.verificationStatus in a
+   * single transaction so a document is never marked reviewed while its profile
+   * lags behind (or vice-versa).
+   */
+  async reviewKycDocument(input: {
+    documentId: string;
+    status: VerificationStatus;
+    reviewNotes?: string;
+    reviewerId: string;
+  }) {
+    const document = await this.prisma.expertKycDocument.findUnique({
+      where: { id: input.documentId },
+      select: { id: true, expertProfileId: true },
+    });
+    if (!document) {
+      throw new NotFoundException(`KYC document ${input.documentId} not found.`);
+    }
+
+    const [reviewedDocument, expertProfile] = await this.prisma.$transaction([
+      this.prisma.expertKycDocument.update({
+        where: { id: document.id },
+        data: {
+          status: input.status,
+          reviewNotes: input.reviewNotes ?? null,
+          reviewedBy: input.reviewerId,
+          reviewedAt: new Date(),
+        },
+      }),
+      this.prisma.expertProfile.update({
+        where: { id: document.expertProfileId },
+        data: { verificationStatus: input.status },
+      }),
+    ]);
+
+    return { document: reviewedDocument, verificationStatus: expertProfile.verificationStatus };
+  }
+
   /** Mock object-storage upload — returns a stand-in URL, no real network I/O. */
   private simulateS3Upload(expertProfileId: string, file: Express.Multer.File): string {
     const safeName = (file.originalname ?? 'document').replace(/[^\w.-]/g, '_');

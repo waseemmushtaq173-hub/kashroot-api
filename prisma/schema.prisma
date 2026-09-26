@@ -937,15 +937,20 @@ enum VerificationStatus {
 
 // Expert credential documents (separate from farmer KycDocument / kyc_documents).
 model ExpertKycDocument {
-  id              String   @id @default(uuid())
-  expertProfileId String   @map("expert_profile_id")
-  documentUrl     String   @map("document_url")
-  documentType    String   @map("document_type") // 'DEGREE', 'GOVT_ID', ...
-  uploadedAt      DateTime @default(now()) @map("uploaded_at")
+  id              String             @id @default(uuid())
+  expertProfileId String             @map("expert_profile_id")
+  documentUrl     String             @map("document_url")
+  documentType    String             @map("document_type") // 'DEGREE', 'GOVT_ID', ...
+  status          VerificationStatus @default(PENDING)
+  reviewNotes     String?            @map("review_notes")
+  reviewedBy      String?            @map("reviewed_by") // admin user id (req.user.sub)
+  reviewedAt      DateTime?          @map("reviewed_at")
+  uploadedAt      DateTime           @default(now()) @map("uploaded_at")
 
   expertProfile ExpertProfile @relation(fields: [expertProfileId], references: [id], onDelete: Cascade)
 
   @@index([expertProfileId])
+  @@index([status])
   @@map("expert_kyc_documents")
 }
 
