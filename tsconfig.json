@@ -28,8 +28,6 @@
     "src/modules/disputes",
     "src/modules/notifications",
     "src/modules/realtime",
-    "src/modules/orders/orders.controller.ts",
-    "src/modules/orders/orders.module.ts",
     "src/modules/orders/payments.service.ts",
     "src/modules/orders/pricing-snapshot.service.ts",
     "src/modules/orders/ledger.service.ts",

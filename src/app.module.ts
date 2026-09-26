@@ -6,6 +6,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { AuthModule } from './modules/auth/auth.module';
 import { RbacModule } from './modules/rbac/rbac.module';
 import { ListingsModule } from './modules/listings/listings.module';
+import { OrdersModule } from './modules/orders/orders.module';
 import { PrismaService } from './prisma/prisma.service';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -40,8 +41,9 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
     AuthModule,
     RbacModule,
     ListingsModule,
+    OrdersModule,
     // Future modules added here:
-    // AppointmentsModule, OrdersModule,
+    // AppointmentsModule,
     // PaymentsModule, PayoutsModule, ShipmentsModule,
     // DisputesModule, ReviewsModule, NotificationsModule,
     // StorageModule, AdminModule, RealtimeModule,
