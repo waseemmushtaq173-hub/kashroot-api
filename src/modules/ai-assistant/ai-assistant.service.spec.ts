@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { PreferredLanguage, TrendIndicator, WeatherSeverity, OrderStatus } from '@prisma/client';
 
 import { AiAssistantService, VoiceQueryInput } from './ai-assistant.service';
@@ -31,6 +32,9 @@ describe('AiAssistantService (voice-to-voice pipeline)', () => {
         AiAssistantService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AdvisoryService, useValue: mockAdvisory },
+        // No provider keys/URLs set: get() echoes the default, so LLM_API_KEY /
+        // BHASHINI_* resolve undefined and every stage uses its offline stand-in.
+        { provide: ConfigService, useValue: { get: (_key: string, def?: unknown) => def } },
       ],
     }).compile();
 

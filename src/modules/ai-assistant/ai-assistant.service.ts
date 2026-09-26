@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { createHash } from 'crypto';
 import {
   OrderStatus,
@@ -44,28 +45,49 @@ const ACTIVE_ORDER_STATUSES: OrderStatus[] = [
 /**
  * Voice-to-voice assistant pipeline for the farmer-facing app.
  *
- * Design constraint: NO paid third-party APIs. The pipeline is built around
- * free / self-hostable / government tooling:
- *   - STT: Bhashini (Govt. of India ASR, has Kashmiri/Urdu/Hindi models),
- *          with self-hosted OpenAI Whisper as the offline fallback.
- *   - LLM: a self-hosted open model (e.g. Llama / Mistral via Ollama) — swap
- *          behind this service; the controller never sees the provider.
- *   - TTS: Bhashini TTS, with Coqui TTS as the self-hosted fallback.
- *   - Storage: object storage (S3/GCS/MinIO) for the generated reply audio.
+ * Each stage calls a real provider when its env vars are configured, and falls
+ * back to a deterministic offline stand-in otherwise (so dev + tests need no
+ * external services). Provider selection is invisible to the controller:
+ *   - STT: Bhashini ASR (BHASHINI_API_KEY + BHASHINI_ASR_URL). Kashmiri/Urdu/
+ *          Hindi/English models. Stand-in: length-keyed sample utterance.
+ *   - LLM: OpenAI or Gemini (LLM_PROVIDER + LLM_API_KEY + LLM_MODEL). Stand-in:
+ *          the deterministic keyword router grounded in the farmer's own live
+ *          platform state (mandi prices, weather alerts, active orders, advisories).
+ *   - TTS: Bhashini TTS (BHASHINI_API_KEY + BHASHINI_TTS_URL). Stand-in: a
+ *          deterministic mock CDN URL keyed by language + a hash of the text.
  *
- * MVP is synchronous (see AiAssistantController). Each stage below is a
- * deterministic SIMULATION of the real provider call: the transport + auth + DI
- * wiring and the end-to-end contract are exercised for real, while the actual
- * Bhashini / LLM HTTP calls are swapped in later behind these same signatures.
+ * MVP is synchronous (see AiAssistantController). The transport, auth, DI wiring
+ * and end-to-end contract are exercised for real; the Bhashini compute endpoints
+ * are dropped in via env once provisioned — no code change needed.
  */
 @Injectable()
 export class AiAssistantService {
   private readonly logger = new Logger(AiAssistantService.name);
 
+  // --- Provider config. When a key/URL is unset the deterministic offline
+  //     stand-in for that stage is used, so dev + tests run with no external
+  //     services and real providers are enabled purely by setting env vars. ---
+  private readonly llmApiKey?: string;
+  private readonly llmProvider: string;
+  private readonly llmModel: string;
+  private readonly llmApiUrl?: string;
+  private readonly bhashiniApiKey?: string;
+  private readonly bhashiniAsrUrl?: string;
+  private readonly bhashiniTtsUrl?: string;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly advisory: AdvisoryService,
-  ) {}
+    private readonly config: ConfigService,
+  ) {
+    this.llmApiKey = this.config.get<string>('LLM_API_KEY');
+    this.llmProvider = this.config.get<string>('LLM_PROVIDER', 'openai');
+    this.llmModel = this.config.get<string>('LLM_MODEL', 'gpt-4o-mini');
+    this.llmApiUrl = this.config.get<string>('LLM_API_URL');
+    this.bhashiniApiKey = this.config.get<string>('BHASHINI_API_KEY');
+    this.bhashiniAsrUrl = this.config.get<string>('BHASHINI_ASR_URL');
+    this.bhashiniTtsUrl = this.config.get<string>('BHASHINI_TTS_URL');
+  }
 
   async handleVoiceQuery(input: VoiceQueryInput): Promise<VoiceQueryResponseDto> {
     const context = await this.resolveFarmerContext(input.userId);
@@ -116,6 +138,24 @@ export class AiAssistantService {
     mimeType: string,
     language: PreferredLanguage,
   ): Promise<string> {
+    if (this.bhashiniApiKey && this.bhashiniAsrUrl) {
+      try {
+        return await this.bhashiniAsr(audio, mimeType, language);
+      } catch (err) {
+        this.logger.warn(
+          `[STT] Bhashini ASR failed, falling back to simulation: ${(err as Error).message}`,
+        );
+      }
+    }
+    return this.speechToTextSimulated(audio, mimeType, language);
+  }
+
+  /** Deterministic offline stand-in, used until BHASHINI_ASR_URL is configured. */
+  private speechToTextSimulated(
+    audio: Buffer,
+    mimeType: string,
+    language: PreferredLanguage,
+  ): string {
     this.logger.debug(
       `[STT] simulating Bhashini ASR: ${audio.length} bytes, ${mimeType}, lang=${language}`,
     );
@@ -138,6 +178,23 @@ export class AiAssistantService {
    * and compose the reply — the "prompt wrapper" a real model would receive.
    */
   private async askAssistant(transcript: string, context: FarmerContext): Promise<string> {
+    if (this.llmApiKey) {
+      try {
+        return await this.llmReply(transcript, context);
+      } catch (err) {
+        this.logger.warn(
+          `[LLM] live model call failed, falling back to grounded router: ${(err as Error).message}`,
+        );
+      }
+    }
+    return this.askAssistantSimulated(transcript, context);
+  }
+
+  /**
+   * Deterministic grounded router — the offline stand-in used until LLM_API_KEY
+   * is configured, and the fallback whenever a live model call fails.
+   */
+  private async askAssistantSimulated(transcript: string, context: FarmerContext): Promise<string> {
     this.logger.debug(
       `[LLM] simulating local model for farmer=${context.farmerProfileId ?? 'unknown'}, ` +
         `region=${context.regionId ?? 'unknown'}, lang=${context.language}`,
@@ -320,9 +377,200 @@ export class AiAssistantService {
    * keyed by language + a hash of the text so identical replies map to one clip.
    */
   private async textToSpeech(text: string, language: PreferredLanguage): Promise<string> {
+    if (this.bhashiniApiKey && this.bhashiniTtsUrl) {
+      try {
+        return await this.bhashiniTts(text, language);
+      } catch (err) {
+        this.logger.warn(
+          `[TTS] Bhashini synthesis failed, falling back to simulation: ${(err as Error).message}`,
+        );
+      }
+    }
+    return this.textToSpeechSimulated(text, language);
+  }
+
+  /** Deterministic offline stand-in, used until BHASHINI_TTS_URL is configured. */
+  private textToSpeechSimulated(text: string, language: PreferredLanguage): string {
     const clipId = createHash('sha1').update(`${language}:${text}`).digest('hex').slice(0, 16);
     this.logger.debug(`[TTS] simulating Bhashini synthesis: lang=${language}, clip=${clipId}`);
 
     return `https://cdn.mock.local/tts/${language.toLowerCase()}/${clipId}.mp3`;
+  }
+
+  // --- Live provider wrappers (used only when the matching env vars are set) ---
+
+  /**
+   * Build a grounded prompt from the farmer's transcript + resolved context and
+   * ask the configured LLM (OpenAI or Gemini). The reply is generated directly
+   * in the farmer's language for the TTS stage to synthesize.
+   */
+  private async llmReply(transcript: string, context: FarmerContext): Promise<string> {
+    const system =
+      'You are the Kashroot farming assistant for smallholder farmers in Kashmir. ' +
+      `Reply in ${this.languageName(context.language)}. Keep it short, plain and ` +
+      'practical (2-3 sentences) and suitable for text-to-speech playback. You help ' +
+      'with mandi prices, weather, orders and agronomy; if unsure, tell the farmer ' +
+      'to open the relevant screen in the app.';
+    const user =
+      `Farmer question (voice transcript): "${transcript}". ` +
+      `Region id: ${context.regionId ?? 'unknown'}.`;
+    return this.callLlm(system, user);
+  }
+
+  private languageName(language: PreferredLanguage): string {
+    const names: Record<string, string> = {
+      KASHMIRI: 'Kashmiri',
+      URDU: 'Urdu',
+      HINDI: 'Hindi',
+      ENGLISH: 'English',
+    };
+    return names[language] ?? 'English';
+  }
+
+  private async callLlm(system: string, user: string): Promise<string> {
+    return this.llmProvider.toLowerCase() === 'gemini'
+      ? this.callGemini(system, user)
+      : this.callOpenAi(system, user);
+  }
+
+  private async callOpenAi(system: string, user: string): Promise<string> {
+    const base = (this.llmApiUrl || 'https://api.openai.com/v1').replace(/\/$/, '');
+    const res = await fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.llmApiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.llmModel,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+        temperature: 0.3,
+        max_tokens: 300,
+      }),
+    });
+    if (!res.ok) {
+      throw new Error(`OpenAI HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`);
+    }
+    const json: any = await res.json();
+    const text = json?.choices?.[0]?.message?.content;
+    if (typeof text !== 'string' || !text.trim()) throw new Error('OpenAI returned empty content');
+    return text.trim();
+  }
+
+  private async callGemini(system: string, user: string): Promise<string> {
+    const base = (this.llmApiUrl || 'https://generativelanguage.googleapis.com/v1beta').replace(
+      /\/$/,
+      '',
+    );
+    const model = this.llmModel && this.llmModel.startsWith('gemini') ? this.llmModel : 'gemini-1.5-flash';
+    const res = await fetch(`${base}/models/${model}:generateContent?key=${this.llmApiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: 'user', parts: [{ text: user }] }],
+        generationConfig: { temperature: 0.3, maxOutputTokens: 300 },
+      }),
+    });
+    if (!res.ok) {
+      throw new Error(`Gemini HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`);
+    }
+    const json: any = await res.json();
+    const parts = json?.candidates?.[0]?.content?.parts ?? [];
+    const text = parts.map((p: any) => p?.text ?? '').join('').trim();
+    if (!text) throw new Error('Gemini returned empty content');
+    return text;
+  }
+
+  /** PreferredLanguage → Bhashini / ISO-639 language code. */
+  private langToBhashiniCode(language: PreferredLanguage): string {
+    const codes: Record<string, string> = {
+      KASHMIRI: 'ks',
+      URDU: 'ur',
+      HINDI: 'hi',
+      ENGLISH: 'en',
+    };
+    return codes[language] ?? 'hi';
+  }
+
+  /** Shared Bhashini POST helper: JSON body + inference-key auth + error surfacing. */
+  private async postJson(url: string, body: unknown): Promise<any> {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // Bhashini inference key. Some deployments expect a different header
+        // (e.g. plain `Authorization`); set BHASHINI_API_KEY to match the endpoint.
+        Authorization: this.bhashiniApiKey as string,
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      throw new Error(`Bhashini HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`);
+    }
+    return res.json();
+  }
+
+  /**
+   * Bhashini ASR wrapper. POSTs the base64 audio to BHASHINI_ASR_URL with a ULCA
+   * pipeline payload and returns the decoded transcript. The endpoint + pipeline
+   * ids are provisioned later — transport, auth and payload shape are wired now.
+   */
+  private async bhashiniAsr(
+    audio: Buffer,
+    mimeType: string,
+    language: PreferredLanguage,
+  ): Promise<string> {
+    const sourceLanguage = this.langToBhashiniCode(language);
+    const payload = {
+      pipelineTasks: [
+        {
+          taskType: 'asr',
+          config: {
+            language: { sourceLanguage },
+            audioFormat: mimeType.split('/')[1] || 'webm',
+            samplingRate: 16000,
+          },
+        },
+      ],
+      inputData: { audio: [{ audioContent: audio.toString('base64') }] },
+    };
+    const json = await this.postJson(this.bhashiniAsrUrl as string, payload);
+    const transcript =
+      json?.pipelineResponse?.[0]?.output?.[0]?.source ??
+      json?.output?.[0]?.source ??
+      json?.transcript;
+    if (typeof transcript !== 'string' || !transcript.trim()) {
+      throw new Error('Bhashini ASR returned no transcript');
+    }
+    return transcript.trim();
+  }
+
+  /**
+   * Bhashini TTS wrapper. POSTs the reply text to BHASHINI_TTS_URL and returns a
+   * playable audio URL. Bhashini may instead return base64 audioContent — in that
+   * case upload it to object storage (S3/GCS) here and return the resulting URL.
+   */
+  private async bhashiniTts(text: string, language: PreferredLanguage): Promise<string> {
+    const targetLanguage = this.langToBhashiniCode(language);
+    const payload = {
+      pipelineTasks: [
+        {
+          taskType: 'tts',
+          config: { language: { sourceLanguage: targetLanguage }, gender: 'female' },
+        },
+      ],
+      inputData: { input: [{ source: text }] },
+    };
+    const json = await this.postJson(this.bhashiniTtsUrl as string, payload);
+    const audio = json?.pipelineResponse?.[0]?.audio?.[0] ?? json?.audio?.[0];
+    const url = audio?.audioUri ?? audio?.audioUrl;
+    if (typeof url !== 'string' || !url) {
+      throw new Error('Bhashini TTS returned no audio URL (base64 responses need a storage upload)');
+    }
+    return url;
   }
 }
