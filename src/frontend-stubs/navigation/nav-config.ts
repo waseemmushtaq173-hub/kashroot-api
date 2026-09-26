@@ -13,6 +13,7 @@ export interface NavItem {
 export const farmerNav: NavItem[] = [
   { label: 'Home', href: '/farmer', icon: '🏠' },
   { label: 'Mandi', href: '/farmer/mandi', icon: '📈' },
+  { label: 'Knowledge', href: '/farmer/knowledge', icon: '🌱' },
   { label: 'Orders', href: '/farmer/orders', icon: '📦' },
   { label: 'Profile', href: '/farmer/profile', icon: '👤' },
 ];

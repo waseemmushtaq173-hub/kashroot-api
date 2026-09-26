@@ -8,6 +8,7 @@ import {
 } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { AdvisoryService } from '../advisory/advisory.service';
 import { VoiceQueryResponseDto } from './dto/voice-query-response.dto';
 
 export interface VoiceQueryInput {
@@ -61,7 +62,10 @@ const ACTIVE_ORDER_STATUSES: OrderStatus[] = [
 export class AiAssistantService {
   private readonly logger = new Logger(AiAssistantService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly advisory: AdvisoryService,
+  ) {}
 
   async handleVoiceQuery(input: VoiceQueryInput): Promise<VoiceQueryResponseDto> {
     const context = await this.resolveFarmerContext(input.userId);
@@ -141,6 +145,17 @@ export class AiAssistantService {
 
     const q = transcript.toLowerCase();
 
+    // Agronomy knowledge base — checked first so specific farming questions
+    // ("how do I spray for scab?") are grounded in verified advisories rather
+    // than swallowed by the broader intents below. Keywords include Hindi/Urdu/
+    // Kashmiri transliterations a voice transcript may carry.
+    if (
+      /\b(spray|disease|scab|prune|pruning|fungicide|fertilizer|fertiliser|pest|bimari|dawa|koshur|leaf)\b/.test(
+        q,
+      )
+    ) {
+      return this.answerAgronomy(transcript, context);
+    }
     if (/\b(mandi|price|rate|bhaav|daam)\b/.test(q)) {
       return this.answerMandiPrices(context);
     }
@@ -154,6 +169,31 @@ export class AiAssistantService {
     return (
       "I can help with today's mandi prices, the weather forecast, or your " +
       'active orders. Please say "mandi", "weather", or "orders".'
+    );
+  }
+
+  /**
+   * Grounded agronomy reply: queries the Spoken Agronomy Knowledge Base for the
+   * advisory most relevant to the farmer's question and speaks its verified
+   * guidance. The reply text is composed here (English) and synthesized into the
+   * farmer's language by the TTS stage — the advisory's own pre-rendered clips
+   * are used by the Farmer Portal knowledge feed, not this conversational path.
+   */
+  private async answerAgronomy(transcript: string, context: FarmerContext): Promise<string> {
+    const advisory = await this.advisory.searchRelevantAdvisory(transcript, context.regionId);
+
+    if (!advisory) {
+      return (
+        'I could not find a verified advisory for that yet. You can browse the ' +
+        'Farming Knowledge feed for spray schedules, pest control, and orchard tips, ' +
+        'or ask an expert.'
+      );
+    }
+
+    return (
+      `Here is verified guidance on ${advisory.topic}. ${advisory.content} ` +
+      `This advice is from ${advisory.source}. Open the Farming Knowledge feed to ` +
+      'listen to the full advisory.'
     );
   }
 

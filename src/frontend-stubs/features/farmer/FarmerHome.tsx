@@ -38,6 +38,23 @@ export function FarmerHome() {
       <p className="text-2xl font-bold text-brand-700">
         {greeting(language)} 👋
       </p>
+
+      {/* Entry point to the Spoken Agronomy Knowledge Base. */}
+      <a
+        href="/farmer/knowledge"
+        className="flex items-center gap-3 rounded-xl border border-brand-200 bg-brand-50 p-4 hover:bg-brand-100"
+      >
+        <span aria-hidden className="text-2xl">
+          🌱
+        </span>
+        <span className="flex flex-col">
+          <span className="font-bold text-brand-700">Farming Knowledge</span>
+          <span className="text-sm text-slate-600">
+            Spray schedules, pest control &amp; orchard tips — listen in your language
+          </span>
+        </span>
+      </a>
+
       <p className="text-lg text-slate-600">Today&apos;s mandi rates for your area:</p>
 
       {loading ? (

@@ -104,3 +104,28 @@ export interface AgencyInspectionResult {
     audioPrompts?: Partial<Record<PreferredLanguage, string>> | null;
   };
 }
+
+/** Knowledge-base bucket (mirrors the backend AdvisoryCategory enum). */
+export type AdvisoryCategory =
+  | 'SPRAY_SCHEDULE'
+  | 'DISEASE_PEST'
+  | 'FERTILIZER_SOIL'
+  | 'MODERN_TECH';
+
+/**
+ * One verified farming advisory from GET /api/v1/advisories. Visual text stays
+ * English; `audioPrompts` carries the per-language spoken clip the knowledge
+ * feed plays via lib/spoken-audio.ts (a language key may be absent).
+ */
+export interface FarmingAdvisory {
+  id: string;
+  topic: string;
+  category: AdvisoryCategory;
+  content: string;
+  applicableCrops: string[];
+  applicableRegions: string[];
+  source: string;
+  audioPrompts?: Partial<Record<PreferredLanguage, string>> | null;
+  createdAt: string; // ISO timestamp
+  updatedAt: string; // ISO timestamp
+}

@@ -71,6 +71,7 @@ enum RoleName {
   LOGISTICS_PARTNER
   SUPPORT_MODERATOR
   TESTER
+  EXPERT
   SYSTEM
 
   @@map("role_name")
@@ -1086,4 +1087,36 @@ model AgencyPesticideInspection {
   @@index([testerProfileId, createdAt])
   @@index([productBrand])
   @@map("agency_pesticide_inspections")
+}
+
+// ============================================================
+// SPOKEN AGRONOMY KNOWLEDGE BASE
+// ============================================================
+// Research-backed farming advisories (spray schedules, pest control, modern
+// orchard tech) surfaced in the Farmer Portal and grounded into the Voice AI
+// assistant, with pre-rendered TTS clips per language.
+
+enum AdvisoryCategory {
+  SPRAY_SCHEDULE
+  DISEASE_PEST
+  FERTILIZER_SOIL
+  MODERN_TECH
+
+  @@map("advisory_category")
+}
+
+model FarmingAdvisory {
+  id                String           @id @default(uuid())
+  topic             String // e.g. "Apple Scab Spray Schedule"
+  category          AdvisoryCategory
+  content           String // concise agronomy guidance
+  applicableCrops   String[]         @map("applicable_crops")
+  applicableRegions String[]         @map("applicable_regions")
+  source            String // e.g. "SKUAST-K / Horticulture Dept"
+  audioPrompts      Json?            @map("audio_prompts") // pre-rendered TTS per language
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+
+  @@index([category])
+  @@map("farming_advisories")
 }

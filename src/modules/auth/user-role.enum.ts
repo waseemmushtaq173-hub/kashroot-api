@@ -5,4 +5,5 @@ export enum UserRole {
   FARMER = 'FARMER',
   BUYER = 'BUYER',
   TESTER = 'TESTER',
+  EXPERT = 'EXPERT',
 }

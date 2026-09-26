@@ -45,6 +45,7 @@ src/frontend-stubs/
     TesterLayout.tsx    # AgroGuard QC suite: camera HUD + audit toolbar
   features/
     farmer/FarmerHome.tsx        # mandi listic cards
+    farmer/FarmingKnowledgeFeed.tsx # spoken agronomy advisories (listic cards)
     buyer/BuyerDashboard.tsx     # escrow tracking + market KPIs
     expert/ExpertHome.tsx        # KYC standing + appointments
     admin/KycModerationQueue.tsx # approve/reject pending expert KYC
@@ -109,6 +110,9 @@ maps to a role-switched root navigator. See `AppShellExample.tsx`.
 - `BuyerDashboard` escrow rows → `GET /api/v1/escrow/:orderId` (placeholder data)
 - `TesterDashboard` → `POST /api/v1/tester/inspect`, `GET /api/v1/tester/history`
   (AgroGuard counterfeit detection; TESTER role)
+- `FarmingKnowledgeFeed` → `GET /api/v1/advisories` (public agronomy knowledge feed);
+  authoring via `POST /api/v1/admin/advisories` (PLATFORM_ADMIN / REGIONAL_ADMIN / EXPERT)
+  and `POST /api/v1/admin/advisories/seed`
 
 ## English UI + 4-Language Spoken Audio
 

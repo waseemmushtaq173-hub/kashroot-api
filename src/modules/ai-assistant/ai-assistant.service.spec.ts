@@ -3,6 +3,7 @@ import { PreferredLanguage, TrendIndicator, WeatherSeverity, OrderStatus } from 
 
 import { AiAssistantService, VoiceQueryInput } from './ai-assistant.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AdvisoryService } from '../advisory/advisory.service';
 
 describe('AiAssistantService (voice-to-voice pipeline)', () => {
   let service: AiAssistantService;
@@ -12,6 +13,10 @@ describe('AiAssistantService (voice-to-voice pipeline)', () => {
     mandiPrice: { findFirst: jest.fn() },
     weatherAlert: { findFirst: jest.fn() },
     order: { findMany: jest.fn() },
+  };
+
+  const mockAdvisory = {
+    searchRelevantAdvisory: jest.fn(),
   };
 
   const input = (): VoiceQueryInput => ({
@@ -25,6 +30,7 @@ describe('AiAssistantService (voice-to-voice pipeline)', () => {
       providers: [
         AiAssistantService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: AdvisoryService, useValue: mockAdvisory },
       ],
     }).compile();
 
@@ -34,6 +40,7 @@ describe('AiAssistantService (voice-to-voice pipeline)', () => {
     mockPrisma.mandiPrice.findFirst.mockResolvedValue(null);
     mockPrisma.weatherAlert.findFirst.mockResolvedValue(null);
     mockPrisma.order.findMany.mockResolvedValue([]);
+    mockAdvisory.searchRelevantAdvisory.mockResolvedValue(null);
   });
 
   afterEach(() => jest.clearAllMocks());
@@ -139,6 +146,36 @@ describe('AiAssistantService (voice-to-voice pipeline)', () => {
       );
       expect(res.replyText).toContain('2 active orders');
       expect(res.replyText).toContain('out for delivery');
+    });
+
+    it('agronomy intent: grounds an apple-scab spray query in a verified advisory', async () => {
+      withTranscript('how do I spray for apple scab disease');
+      mockAdvisory.searchRelevantAdvisory.mockResolvedValue({
+        topic: 'Apple Scab Spray Schedule (Green Tip to Pink Bud)',
+        content: 'Spray Mancozeb 75% WP at 3 g per litre of water at green-tip.',
+        source: 'SKUAST-K / J&K Horticulture Department',
+      });
+
+      const res = await service.handleVoiceQuery(input());
+
+      expect(mockAdvisory.searchRelevantAdvisory).toHaveBeenCalledWith(
+        'how do I spray for apple scab disease',
+        'reg-1',
+      );
+      expect(res.replyText).toContain('Apple Scab Spray Schedule');
+      expect(res.replyText).toContain('Mancozeb');
+      expect(res.replyText).toContain('SKUAST-K');
+      // Agronomy short-circuits the other intents.
+      expect(mockPrisma.mandiPrice.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('agronomy intent: guides to the knowledge feed when no advisory matches', async () => {
+      withTranscript('tell me about fungicide for my leaf');
+      mockAdvisory.searchRelevantAdvisory.mockResolvedValue(null);
+
+      const res = await service.handleVoiceQuery(input());
+
+      expect(res.replyText).toContain('Farming Knowledge');
     });
 
     it('falls back to the spoken menu when no intent matches', async () => {

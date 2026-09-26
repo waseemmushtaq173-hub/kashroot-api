@@ -12,6 +12,7 @@ import { ExpertKycModule } from './modules/expert-kyc/expert-kyc.module';
 import { MandiPricesModule } from './modules/mandi-prices/mandi-prices.module';
 import { EscrowModule } from './modules/escrow/escrow.module';
 import { AgroGuardTesterModule } from './modules/agroguard-tester/agroguard-tester.module';
+import { AdvisoryModule } from './modules/advisory/advisory.module';
 import { PrismaService } from './prisma/prisma.service';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -52,6 +53,7 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
     MandiPricesModule,
     EscrowModule,
     AgroGuardTesterModule,
+    AdvisoryModule,
     // Future modules added here:
     // AppointmentsModule,
     // PaymentsModule, PayoutsModule, ShipmentsModule,
