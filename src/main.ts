@@ -33,11 +33,10 @@ async function bootstrap() {
     ...(isDev ? ['http://localhost:3001'] : []),
   ];
   app.enableCors({
-    origin:      allowedOrigins,
-    credentials: true,
-    methods:     ['GET', 'HEAD', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+  origin: true,
+  credentials: true,
+  methods: ['GET', 'HEAD', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
   });
-
   // ----------------------------------------------------------------
   // Cookie parser (required for httpOnly refresh token cookie)
   // ----------------------------------------------------------------
