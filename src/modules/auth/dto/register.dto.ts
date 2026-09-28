@@ -5,6 +5,14 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RegisterDto {
+  @ApiProperty({ example: 'Waseem Mushtaq' })
+  @IsString()
+  fullName: string;
+
+  @ApiProperty({ example: 'FARMER' })
+  @IsString()
+  role: string;
+
   @ApiPropertyOptional({ example: 'farmer@example.com' })
   @IsEmail()
   @IsOptional()
@@ -17,9 +25,8 @@ export class RegisterDto {
 
   @ApiProperty({ example: 'SecurePass123!' })
   @IsString()
-  @MinLength(10, { message: 'Password must be at least 10 characters' })
+  @MinLength(8, { message: 'Password must be at least 8 characters' })
   password: string;
 
   // At least one of email or phone is required
-  // (enforced at service layer since class-validator can't express this cleanly)
 }
