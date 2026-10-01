@@ -9,6 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RbacService } from '../rbac/rbac.service';
+import { MailService } from '../mail/mail.service'; // 👈 Import MailService
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
@@ -26,6 +27,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly rbacService: RbacService,
+    private readonly mailService: MailService, // 👈 Inject MailService here
   ) {}
 
   async register(dto: RegisterDto): Promise<{ message: string }> {
@@ -62,6 +64,15 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + expiryMin * 60_000);
     OTP_STORE.set(target, { code, expiresAt });
     
+    // Trigger real email if target is an email address
+    if (target.includes('@')) {
+      await this.mailService.sendMail(
+        target,
+        'Your KashRoot Verification Code',
+        `<h2>Welcome to KashRoot</h2><p>Your verification code is: <b>${code}</b></p><p>This code expires in ${expiryMin} minutes.</p>`,
+      );
+    }
+
     console.log('========================================');
     console.log(`[KASHROOT OTP] Target: ${target} → Code: ${code}`);
     console.log('========================================');
@@ -93,6 +104,13 @@ export class AuthService {
   async forgotPassword(email: string): Promise<{ message: string }> {
     const user = await this.prisma.user.findUnique({ where: { email } });
     const resetToken = randomBytes(32).toString('hex');
+
+    // Trigger real password reset email
+    await this.mailService.sendMail(
+      email,
+      'KashRoot Password Reset Instructions',
+      `<h2>Password Reset Request</h2><p>Your password reset token is: <b>${resetToken}</b></p><p>If you did not request this, please ignore this email.</p>`,
+    );
 
     console.log('========================================');
     console.log(`[KASHROOT PASSWORD RESET] Email: ${email} → Token: ${resetToken}`);
