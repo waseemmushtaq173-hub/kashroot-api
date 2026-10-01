@@ -35,6 +35,14 @@ export class AuthController {
   }
 
   @Public()
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Request password reset instructions' })
+  forgotPassword(@Body('email') email: string) {
+    return this.authService.forgotPassword(email);
+  }
+
+  @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login — returns access token + sets refresh cookie' })
@@ -127,8 +135,6 @@ export class AuthController {
   @UseGuards(AuthGuard('google'))
   @ApiOperation({ summary: 'Google OAuth callback' })
   googleCallback(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    // req.user is populated by GoogleStrategy.validate()
-    // Redirect to frontend with access token as query param (short-lived)
     const { accessToken } = req.user as { accessToken: string };
     const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
     return res.redirect(`${frontendUrl}/auth/oauth-success?token=${accessToken}`);
