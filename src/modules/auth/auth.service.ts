@@ -60,24 +60,26 @@ export class AuthService {
       data: { email: dto.email, phone: dto.phone, passwordHash, status: 'PENDING_VERIFICATION' },
     });
 
-    await this.sendOtp(dto.email ?? dto.phone!);
-    return { message: 'Registration successful. Please verify your account with the OTP sent.' };
+    const code = await this.sendOtp(dto.email ?? dto.phone!);
+    return { message: `Registration successful. [TEST OTP: ${code}] Please verify your account with the OTP sent.` };
   }
 
   // ──────────────────────────────────────────────────────────────────────────
   // OTP
   // ──────────────────────────────────────────────────────────────────────────
 
-  async sendOtp(target: string): Promise<void> {
+  async sendOtp(target: string): Promise<string> {
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     const expiryMin = parseInt(this.config.get('OTP_EXPIRY_MINUTES', '10'));
     const expiresAt = new Date(Date.now() + expiryMin * 60_000);
     OTP_STORE.set(target, { code, expiresAt });
-    // TODO: dispatch via NotificationsService (email/SMS channel)
-    // In dev, log to stdout for testing; never log in production.
-    if (this.config.get('NODE_ENV') !== 'production') {
-      console.log(`[DEV OTP] ${target} → ${code}`);
-    }
+    
+    // Always log to stdout so it's visible in Render logs even in production mode
+    console.log('========================================');
+    console.log(`[KASHROOT OTP] Target: ${target} → Code: ${code}`);
+    console.log('========================================');
+
+    return code;
   }
 
   async verifyOtp(dto: VerifyOtpDto): Promise<{ message: string }> {
@@ -114,9 +116,9 @@ export class AuthService {
       ? await this.prisma.user.findUnique({ where: { email: dto.email } })
       : await this.prisma.user.findUnique({ where: { phone: dto.phone } });
 
-    if (!user)                             throw new UnauthorizedException('Invalid credentials');
-    if (user.status === 'DELETED')         throw new UnauthorizedException('Account not found');
-    if (user.status === 'SUSPENDED')       throw new ForbiddenException('Account suspended. Contact support.');
+    if (!user)                                   throw new UnauthorizedException('Invalid credentials');
+    if (user.status === 'DELETED')               throw new UnauthorizedException('Account not found');
+    if (user.status === 'SUSPENDED')             throw new ForbiddenException('Account suspended. Contact support.');
     if (user.status === 'PENDING_VERIFICATION') {
       throw new UnauthorizedException('Please verify your account first');
     }
@@ -125,20 +127,17 @@ export class AuthService {
     if (!passwordMatch) throw new UnauthorizedException('Invalid credentials');
 
     // ── MFA check ────────────────────────────────────────────────────────────
-    // Mandatory for SUPER_ADMIN / REGIONAL_ADMIN if MFA is enrolled.
-    // For users with mfa_enabled=true, totpCode is always required.
     const roles = await this.rbacService.resolveUserRoles(user.id);
     const requiresMfa = user.mfaEnabled;
     if (requiresMfa) {
       if (!dto.totpCode) {
-        throw new UnauthorizedException('MFA_REQUIRED'); // client checks this code
+        throw new UnauthorizedException('MFA_REQUIRED');
       }
       const secret = this.decryptMfaSecret(user.mfaSecret!);
       const valid = authenticator.verify({ token: dto.totpCode, secret });
       if (!valid) throw new UnauthorizedException('Invalid MFA code');
     }
 
-    // Enforce MFA enrollment for privileged roles even if not yet set up
     const privilegedRoles = ['SUPER_ADMIN', 'REGIONAL_ADMIN'] as const;
     const isPrivileged = roles.some((r) => (privilegedRoles as readonly string[]).includes(r));
     if (isPrivileged && !user.mfaEnabled) {
@@ -189,7 +188,7 @@ export class AuthService {
       httpOnly:  true,
       secure:    this.config.get('NODE_ENV') === 'production',
       sameSite:  'strict',
-      maxAge:    30 * 24 * 60 * 60 * 1000, // 30 days ms
+      maxAge:    30 * 24 * 60 * 60 * 1000,
       path:      '/api/v1/auth',
     });
 
@@ -220,7 +219,6 @@ export class AuthService {
     refreshTokenId: string,
     res: Response,
   ): Promise<{ accessToken: string }> {
-    // Revoke old token (rotation)
     await this.prisma.refreshToken.update({
       where: { id: refreshTokenId },
       data:  { revokedAt: new Date() },
@@ -240,7 +238,6 @@ export class AuthService {
       { secret: this.config.getOrThrow('JWT_ACCESS_SECRET'), expiresIn: this.config.get('JWT_ACCESS_EXPIRES_IN', '15m') },
     );
 
-    // Issue new refresh token
     const rawRefresh = randomBytes(64).toString('hex');
     const tokenHash  = await argon2.hash(rawRefresh, { type: argon2.argon2id });
     const expiresAt  = new Date(Date.now() + this.parseMs(this.config.get('JWT_REFRESH_EXPIRES_IN', '30d')));
@@ -294,7 +291,6 @@ export class AuthService {
     const label  = user.email ?? user.phone ?? userId;
     const otpauthUrl = authenticator.keyuri(label, issuer, secret);
 
-    // Store secret encrypted (not yet activated — activation on verify-setup)
     const encryptedSecret = this.encryptMfaSecret(secret);
     await this.prisma.user.update({
       where: { id: userId },
@@ -328,7 +324,6 @@ export class AuthService {
     const valid  = authenticator.verify({ token: totpCode, secret });
     if (!valid) throw new UnauthorizedException('Invalid TOTP code');
 
-    // Privileged roles cannot disable MFA
     const roles = await this.rbacService.resolveUserRoles(userId);
     if (roles.includes('SUPER_ADMIN') || roles.includes('REGIONAL_ADMIN')) {
       throw new ForbiddenException('Privileged accounts cannot disable MFA');
@@ -350,18 +345,17 @@ export class AuthService {
     const iv  = randomBytes(16);
     const cipher = createCipheriv('aes-256-cbc', key, iv);
     const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
-    return Buffer.concat([iv, encrypted]); // prepend iv for decryption
+    return Buffer.concat([iv, encrypted]);
   }
 
   private decryptMfaSecret(data: Buffer): string {
-    const key       = Buffer.from(this.config.getOrThrow('ENCRYPTION_KEY'), 'hex');
-    const iv        = data.subarray(0, 16);
-    const encrypted = data.subarray(16);
-    const decipher  = createDecipheriv('aes-256-cbc', key, iv);
+    const key         = Buffer.from(this.config.getOrThrow('ENCRYPTION_KEY'), 'hex');
+    const iv          = data.subarray(0, 16);
+    const encrypted   = data.subarray(16);
+    const decipher    = createDecipheriv('aes-256-cbc', key, iv);
     return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
   }
 
-  /** Parse duration strings like '30d', '15m', '1h' to milliseconds. */
   private parseMs(duration: string): number {
     const unit  = duration.slice(-1);
     const value = parseInt(duration.slice(0, -1));
