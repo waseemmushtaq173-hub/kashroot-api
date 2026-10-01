@@ -88,8 +88,6 @@ export class AuthController {
     return user;
   }
 
-  // ---- MFA ----
-
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @Post('mfa/setup')
@@ -122,13 +120,11 @@ export class AuthController {
     return this.authService.disableMfa(user.sub, body.totpCode);
   }
 
-  // ---- Google OAuth (buyers only) ----
-
   @Public()
   @Get('oauth/google')
   @UseGuards(AuthGuard('google'))
   @ApiOperation({ summary: 'Redirect to Google OAuth (buyers only)' })
-  googleAuth() { /* Passport redirects */ }
+  googleAuth() {}
 
   @Public()
   @Get('oauth/google/callback')

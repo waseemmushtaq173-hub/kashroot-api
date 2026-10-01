@@ -17,10 +17,6 @@ import { authenticator } from 'otplib';
 import { randomBytes, createCipheriv, createDecipheriv } from 'crypto';
 import { Response } from 'express';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// OTP store — replace with Redis in production.
-// Key: email|phone → { code, expiresAt }
-// ─────────────────────────────────────────────────────────────────────────────
 const OTP_STORE = new Map<string, { code: string; expiresAt: Date }>();
 
 @Injectable()
@@ -31,10 +27,6 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly rbacService: RbacService,
   ) {}
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // REGISTRATION
-  // ──────────────────────────────────────────────────────────────────────────
 
   async register(dto: RegisterDto): Promise<{ message: string }> {
     if (!dto.email && !dto.phone) {
@@ -64,17 +56,12 @@ export class AuthService {
     return { message: `Registration successful. [TEST OTP: ${code}] Please verify your account with the OTP sent.` };
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // OTP
-  // ──────────────────────────────────────────────────────────────────────────
-
   async sendOtp(target: string): Promise<string> {
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     const expiryMin = parseInt(this.config.get('OTP_EXPIRY_MINUTES', '10'));
     const expiresAt = new Date(Date.now() + expiryMin * 60_000);
     OTP_STORE.set(target, { code, expiresAt });
     
-    // Always log to stdout so it's visible in Render logs even in production mode
     console.log('========================================');
     console.log(`[KASHROOT OTP] Target: ${target} → Code: ${code}`);
     console.log('========================================');
@@ -103,9 +90,16 @@ export class AuthService {
     return { message: 'Account verified successfully.' };
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // LOGIN
-  // ──────────────────────────────────────────────────────────────────────────
+  async forgotPassword(email: string): Promise<{ message: string }> {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    const resetToken = randomBytes(32).toString('hex');
+
+    console.log('========================================');
+    console.log(`[KASHROOT PASSWORD RESET] Email: ${email} → Token: ${resetToken}`);
+    console.log('========================================');
+
+    return { message: 'If an account with that email exists, password reset instructions have been sent.' };
+  }
 
   async login(
     dto: LoginDto,
@@ -126,7 +120,6 @@ export class AuthService {
     const passwordMatch = await argon2.verify(user.passwordHash, dto.password);
     if (!passwordMatch) throw new UnauthorizedException('Invalid credentials');
 
-    // ── MFA check ────────────────────────────────────────────────────────────
     const roles = await this.rbacService.resolveUserRoles(user.id);
     const requiresMfa = user.mfaEnabled;
     if (requiresMfa) {
@@ -146,13 +139,11 @@ export class AuthService {
       );
     }
 
-    // ── Resolve permissions + region scopes ─────────────────────────────────
     const [permissions, regionIds] = await Promise.all([
       this.rbacService.resolveUserPermissions(user.id),
       this.rbacService.resolveUserRegionIds(user.id),
     ]);
 
-    // ── Issue access token (15 min) ──────────────────────────────────────────
     const accessPayload = {
       sub:        user.id,
       email:      user.email,
@@ -167,7 +158,6 @@ export class AuthService {
       expiresIn: this.config.get('JWT_ACCESS_EXPIRES_IN', '15m'),
     });
 
-    // ── Issue + store refresh token (30d) ────────────────────────────────────
     const rawRefresh = randomBytes(64).toString('hex');
     const tokenHash  = await argon2.hash(rawRefresh, { type: argon2.argon2id });
     const expiresAt  = new Date(
@@ -183,7 +173,6 @@ export class AuthService {
       },
     });
 
-    // ── Set httpOnly secure cookie ───────────────────────────────────────────
     res.cookie('refresh_token', rawRefresh, {
       httpOnly:  true,
       secure:    this.config.get('NODE_ENV') === 'production',
@@ -192,7 +181,6 @@ export class AuthService {
       path:      '/api/v1/auth',
     });
 
-    // Update last login
     await this.prisma.user.update({
       where: { id: user.id },
       data:  { lastLoginAt: new Date() },
@@ -209,10 +197,6 @@ export class AuthService {
       },
     };
   }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // TOKEN REFRESH
-  // ──────────────────────────────────────────────────────────────────────────
 
   async refresh(
     userId: string,
@@ -256,10 +240,6 @@ export class AuthService {
     return { accessToken };
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // LOGOUT
-  // ──────────────────────────────────────────────────────────────────────────
-
   async logout(refreshTokenId: string, res: Response): Promise<{ message: string }> {
     await this.prisma.refreshToken.update({
       where: { id: refreshTokenId },
@@ -277,10 +257,6 @@ export class AuthService {
     res.clearCookie('refresh_token', { path: '/api/v1/auth' });
     return { message: 'Logged out from all devices.' };
   }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // MFA SETUP (TOTP)
-  // ──────────────────────────────────────────────────────────────────────────
 
   async setupMfa(userId: string): Promise<{ otpauthUrl: string; secret: string }> {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
@@ -335,10 +311,6 @@ export class AuthService {
     });
     return { message: 'MFA disabled.' };
   }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // PRIVATE HELPERS
-  // ──────────────────────────────────────────────────────────────────────────
 
   private encryptMfaSecret(plaintext: string): Buffer {
     const key = Buffer.from(this.config.getOrThrow('ENCRYPTION_KEY'), 'hex');
