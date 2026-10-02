@@ -4,36 +4,65 @@ import {
   UnauthorizedException,
   ConflictException,
   ForbiddenException,
+  InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RbacService } from '../rbac/rbac.service';
-import { MailService } from '../mail/mail.service'; // 👈 Import MailService
+import { MailService } from '../mail/mail.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { RoleName } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { authenticator } from 'otplib';
-import { randomBytes, createCipheriv, createDecipheriv } from 'crypto';
+import {
+  randomBytes,
+  randomInt,
+  createCipheriv,
+  createDecipheriv,
+  timingSafeEqual,
+} from 'crypto';
 import { Response } from 'express';
+
+/**
+ * Roles a user may assign to themselves at registration.
+ * RegisterDto.role is a free-form string, so without this allowlist a caller
+ * could request SUPER_ADMIN and be granted it.
+ */
+const SELF_REGISTERABLE_ROLES: readonly RoleName[] = ['FARMER', 'BUYER'];
+
+/** Default buyer classification until the buyer completes profile setup. */
+const DEFAULT_BUYER_TYPE = 'DOMESTIC_OTHER_REGION' as const;
 
 const OTP_STORE = new Map<string, { code: string; expiresAt: Date }>();
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly rbacService: RbacService,
-    private readonly mailService: MailService, // 👈 Inject MailService here
+    private readonly mailService: MailService,
   ) {}
 
   async register(dto: RegisterDto): Promise<{ message: string }> {
     if (!dto.email && !dto.phone) {
       throw new BadRequestException('email or phone is required');
     }
+
+    const requestedRole = (dto.role ?? '').toUpperCase() as RoleName;
+    if (!SELF_REGISTERABLE_ROLES.includes(requestedRole)) {
+      throw new BadRequestException(
+        `role must be one of: ${SELF_REGISTERABLE_ROLES.join(', ')}`,
+      );
+    }
+
     if (dto.email) {
       const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
       if (existing) throw new ConflictException('Email already registered');
@@ -50,34 +79,71 @@ export class AuthService {
       parallelism: parseInt(this.config.get('ARGON2_PARALLELISM', '4')),
     });
 
-    await this.prisma.user.create({
-      data: { email: dto.email, phone: dto.phone, passwordHash, status: 'PENDING_VERIFICATION' },
-    });
-
-    const code = await this.sendOtp(dto.email ?? dto.phone!);
-    return { message: `Registration successful. [TEST OTP: ${code}] Please verify your account with the OTP sent.` };
-  }
-
-  async sendOtp(target: string): Promise<string> {
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiryMin = parseInt(this.config.get('OTP_EXPIRY_MINUTES', '10'));
-    const expiresAt = new Date(Date.now() + expiryMin * 60_000);
-    OTP_STORE.set(target, { code, expiresAt });
-    
-    // Trigger real email if target is an email address
-    if (target.includes('@')) {
-      await this.mailService.sendMail(
-        target,
-        'Your KashRoot Verification Code',
-        `<h2>Welcome to KashRoot</h2><p>Your verification code is: <b>${code}</b></p><p>This code expires in ${expiryMin} minutes.</p>`,
-      );
+    // Roles are reference data created by seed/seed.ts. Without this row the
+    // user would be created with an empty permission set.
+    const role = await this.prisma.role.findUnique({ where: { name: requestedRole } });
+    if (!role) {
+      this.logger.error(`Role ${requestedRole} is missing from the database. Run seed/seed.ts.`);
+      throw new InternalServerErrorException('Role configuration missing.');
     }
 
-    console.log('========================================');
-    console.log(`[KASHROOT OTP] Target: ${target} → Code: ${code}`);
-    console.log('========================================');
+    const displayName = dto.fullName?.trim() || dto.email?.split('@')[0] || dto.phone || 'KashRoot user';
+
+    await this.prisma.user.create({
+      data: {
+        email: dto.email,
+        phone: dto.phone,
+        passwordHash,
+        status: 'PENDING_VERIFICATION',
+        userRoles: { create: { roleId: role.id } },
+        ...(requestedRole === 'FARMER'
+          ? { farmerProfile: { create: { displayName } } }
+          : { buyerProfile: { create: { displayName, buyerType: DEFAULT_BUYER_TYPE } } }),
+      },
+    });
+
+    await this.sendOtp(dto.email ?? dto.phone!);
+
+    // The OTP is deliberately NOT returned here: echoing it would let a caller
+    // activate any account they just registered without access to the inbox.
+    return { message: 'Registration successful. Please verify your account with the OTP sent.' };
+  }
+
+  /**
+   * Generates, stores and delivers a one-time code.
+   * Returns the code for internal callers only — never place it in an HTTP response.
+   */
+  async sendOtp(target: string): Promise<string> {
+    const code = randomInt(100000, 1000000).toString();
+    const expiryMin = parseInt(this.config.get('OTP_EXPIRY_MINUTES', '10'));
+    const expiresAt = new Date(Date.now() + expiryMin * 60_000);
+
+    this.sweepExpiredOtps();
+    OTP_STORE.set(target, { code, expiresAt });
+
+    if (target.includes('@')) {
+      try {
+        await this.mailService.sendMail(
+          target,
+          'Your KashRoot Verification Code',
+          `<h2>Welcome to KashRoot</h2><p>Your verification code is: <b>${code}</b></p><p>This code expires in ${expiryMin} minutes.</p>`,
+        );
+      } catch (err) {
+        // A mail outage must not fail registration; the code remains stored.
+        this.logger.error(`Failed to send OTP email to ${target}: ${(err as Error).message}`);
+      }
+    } else {
+      this.logger.warn('SMS OTP delivery is not implemented; code stored but not delivered.');
+    }
 
     return code;
+  }
+
+  private sweepExpiredOtps(): void {
+    const now = new Date();
+    for (const [key, entry] of OTP_STORE) {
+      if (entry.expiresAt < now) OTP_STORE.delete(key);
+    }
   }
 
   async verifyOtp(dto: VerifyOtpDto): Promise<{ message: string }> {
@@ -85,14 +151,14 @@ export class AuthService {
     if (!key) throw new BadRequestException('email or phone required');
 
     const stored = OTP_STORE.get(key);
-    if (!stored || stored.code !== dto.code || stored.expiresAt < new Date()) {
+    if (!stored || stored.expiresAt < new Date() || !this.codesMatch(stored.code, dto.code)) {
       throw new UnauthorizedException('Invalid or expired OTP');
     }
     OTP_STORE.delete(key);
 
     const update: Record<string, unknown> = { status: 'ACTIVE' };
-    if (dto.email)  update.emailVerifiedAt = new Date();
-    if (dto.phone)  update.phoneVerifiedAt = new Date();
+    if (dto.email) update.emailVerifiedAt = new Date();
+    if (dto.phone) update.phoneVerifiedAt = new Date();
 
     await this.prisma.user.update({
       where: dto.email ? { email: dto.email } : { phone: dto.phone },
@@ -101,22 +167,40 @@ export class AuthService {
     return { message: 'Account verified successfully.' };
   }
 
+  private codesMatch(expected: string, supplied: string): boolean {
+    const a = Buffer.from(expected, 'utf8');
+    const b = Buffer.from(supplied ?? '', 'utf8');
+    if (a.length !== b.length) return false;
+    return timingSafeEqual(a, b);
+  }
+
   async forgotPassword(email: string): Promise<{ message: string }> {
+    // The response is identical whether or not the account exists, so this
+    // endpoint cannot be used to enumerate registered addresses.
+    const generic = {
+      message: 'If an account with that email exists, password reset instructions have been sent.',
+    };
+
     const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) return generic;
+
+    // NOTE: this token is not persisted anywhere, and no reset endpoint exists
+    // yet — password reset cannot actually be completed. Persisting it needs a
+    // store (Redis or an OtpChallenge/PasswordResetToken table) and is tracked
+    // as its own fix.
     const resetToken = randomBytes(32).toString('hex');
 
-    // Trigger real password reset email
-    await this.mailService.sendMail(
-      email,
-      'KashRoot Password Reset Instructions',
-      `<h2>Password Reset Request</h2><p>Your password reset token is: <b>${resetToken}</b></p><p>If you did not request this, please ignore this email.</p>`,
-    );
+    try {
+      await this.mailService.sendMail(
+        email,
+        'KashRoot Password Reset Instructions',
+        `<h2>Password Reset Request</h2><p>Your password reset token is: <b>${resetToken}</b></p><p>If you did not request this, please ignore this email.</p>`,
+      );
+    } catch (err) {
+      this.logger.error(`Failed to send reset email to ${email}: ${(err as Error).message}`);
+    }
 
-    console.log('========================================');
-    console.log(`[KASHROOT PASSWORD RESET] Email: ${email} → Token: ${resetToken}`);
-    console.log('========================================');
-
-    return { message: 'If an account with that email exists, password reset instructions have been sent.' };
+    return generic;
   }
 
   async login(
@@ -135,7 +219,15 @@ export class AuthService {
       throw new UnauthorizedException('Please verify your account first');
     }
 
-    const passwordMatch = await argon2.verify(user.passwordHash, dto.password);
+    // OAuth-created accounts carry a non-argon2 placeholder hash. argon2.verify
+    // rejects on a malformed hash rather than returning false, so an unguarded
+    // call turns a bad login into a 500.
+    let passwordMatch = false;
+    try {
+      passwordMatch = await argon2.verify(user.passwordHash, dto.password);
+    } catch {
+      passwordMatch = false;
+    }
     if (!passwordMatch) throw new UnauthorizedException('Invalid credentials');
 
     const roles = await this.rbacService.resolveUserRoles(user.id);
@@ -178,9 +270,8 @@ export class AuthService {
 
     const rawRefresh = randomBytes(64).toString('hex');
     const tokenHash  = await argon2.hash(rawRefresh, { type: argon2.argon2id });
-    const expiresAt  = new Date(
-      Date.now() + this.parseMs(this.config.get('JWT_REFRESH_EXPIRES_IN', '30d')),
-    );
+    const refreshTtlMs = this.parseMs(this.config.get('JWT_REFRESH_EXPIRES_IN', '30d'));
+    const expiresAt  = new Date(Date.now() + refreshTtlMs);
     await this.prisma.refreshToken.create({
       data: {
         userId:    user.id,
@@ -195,7 +286,7 @@ export class AuthService {
       httpOnly:  true,
       secure:    this.config.get('NODE_ENV') === 'production',
       sameSite:  'strict',
-      maxAge:    30 * 24 * 60 * 60 * 1000,
+      maxAge:    refreshTtlMs,
       path:      '/api/v1/auth',
     });
 
@@ -242,16 +333,16 @@ export class AuthService {
 
     const rawRefresh = randomBytes(64).toString('hex');
     const tokenHash  = await argon2.hash(rawRefresh, { type: argon2.argon2id });
-    const expiresAt  = new Date(Date.now() + this.parseMs(this.config.get('JWT_REFRESH_EXPIRES_IN', '30d')));
+    const refreshTtlMs = this.parseMs(this.config.get('JWT_REFRESH_EXPIRES_IN', '30d'));
     await this.prisma.refreshToken.create({
-      data: { userId, tokenHash, expiresAt },
+      data: { userId, tokenHash, expiresAt: new Date(Date.now() + refreshTtlMs) },
     });
 
     res.cookie('refresh_token', rawRefresh, {
       httpOnly: true,
       secure:   this.config.get('NODE_ENV') === 'production',
       sameSite: 'strict',
-      maxAge:   30 * 24 * 60 * 60 * 1000,
+      maxAge:   refreshTtlMs,
       path:     '/api/v1/auth',
     });
 
@@ -330,6 +421,11 @@ export class AuthService {
     return { message: 'MFA disabled.' };
   }
 
+  /**
+   * AES-256-CBC with no authentication tag: the ciphertext is malleable and
+   * corruption is not detected. Migrating to aes-256-gcm would invalidate
+   * already-stored secrets, so it is tracked as a separate fix.
+   */
   private encryptMfaSecret(plaintext: string): Buffer {
     const key = Buffer.from(this.config.getOrThrow('ENCRYPTION_KEY'), 'hex');
     const iv  = randomBytes(16);
