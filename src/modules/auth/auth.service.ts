@@ -17,6 +17,7 @@ import { LoginDto } from './dto/login.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { RoleName } from '@prisma/client';
 import * as argon2 from 'argon2';
+import * as QRCode from 'qrcode';
 import { authenticator } from 'otplib';
 import {
   randomBytes,
@@ -374,7 +375,9 @@ export class AuthService {
     return { message: 'Logged out from all devices.' };
   }
 
-  async setupMfa(userId: string): Promise<{ otpauthUrl: string; secret: string }> {
+  async setupMfa(
+    userId: string,
+  ): Promise<{ otpauthUrl: string; qrCodeDataUrl: string; secret: string }> {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
     if (user.mfaEnabled) throw new BadRequestException('MFA already enabled');
 
@@ -383,13 +386,17 @@ export class AuthService {
     const label  = user.email ?? user.phone ?? userId;
     const otpauthUrl = authenticator.keyuri(label, issuer, secret);
 
+    // The client renders this straight into an <img src>, so the QR has to be
+    // produced here — an otpauth:// URL is not displayable on its own.
+    const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl);
+
     const encryptedSecret = this.encryptMfaSecret(secret);
     await this.prisma.user.update({
       where: { id: userId },
       data:  { mfaSecret: encryptedSecret },
     });
 
-    return { otpauthUrl, secret };
+    return { otpauthUrl, qrCodeDataUrl, secret };
   }
 
   async verifyMfaSetup(userId: string, totpCode: string): Promise<{ message: string }> {

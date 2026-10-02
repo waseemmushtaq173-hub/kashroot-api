@@ -1,6 +1,6 @@
 import {
   Controller, Post, Get, Body, Res, Req, UseGuards,
-  HttpCode, HttpStatus,
+  HttpCode, HttpStatus, BadRequestException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
@@ -32,6 +32,21 @@ export class AuthController {
   @ApiOperation({ summary: 'Verify email/phone OTP' })
   verifyOtp(@Body() dto: VerifyOtpDto) {
     return this.authService.verifyOtp(dto);
+  }
+
+  @Public()
+  @Post('otp/resend')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Re-send the email/phone verification OTP' })
+  async resendOtp(@Body() body: { email?: string; phone?: string }) {
+    const target = body?.email ?? body?.phone;
+    if (!target) throw new BadRequestException('email or phone is required');
+
+    await this.authService.sendOtp(target);
+
+    // The response is identical whether or not the account exists: this route is
+    // public, so it must not become an account-enumeration oracle.
+    return { message: 'If the account exists, a new code has been sent.' };
   }
 
   @Public()
