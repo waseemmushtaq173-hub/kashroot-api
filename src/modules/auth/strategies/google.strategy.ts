@@ -10,6 +10,12 @@ import { JwtService } from '@nestjs/jwt';
  * Google OAuth2 strategy — buyers only.
  * On first login: creates user + buyer_profile automatically.
  * On subsequent logins: looks up existing user by email.
+ *
+ * The strategy is registered unconditionally, but tolerates absent GOOGLE_*
+ * configuration so the process can boot without OAuth provisioned. Passport
+ * rejects falsy clientID/clientSecret, so placeholders are substituted: with
+ * OAuth unconfigured, GET /auth/oauth/google fails at Google rather than
+ * crashing the application during dependency injection.
  */
 @Injectable()
 export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
@@ -19,10 +25,18 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     private readonly rbacService: RbacService,
     private readonly jwtService: JwtService,
   ) {
+    const clientID =
+      config.get<string>('GOOGLE_CLIENT_ID') || 'google-oauth-not-configured';
+    const clientSecret =
+      config.get<string>('GOOGLE_CLIENT_SECRET') || 'google-oauth-not-configured';
+    const callbackURL =
+      config.get<string>('GOOGLE_CALLBACK_URL') ||
+      `${config.get<string>('API_BASE_URL') || 'http://localhost:3001'}/api/v1/auth/oauth/google/callback`;
+
     super({
-      clientID:     config.getOrThrow('GOOGLE_CLIENT_ID'),
-      clientSecret: config.getOrThrow('GOOGLE_CLIENT_SECRET'),
-      callbackURL:  config.getOrThrow('GOOGLE_CALLBACK_URL'),
+      clientID,
+      clientSecret,
+      callbackURL,
       scope: ['email', 'profile'],
     });
   }
