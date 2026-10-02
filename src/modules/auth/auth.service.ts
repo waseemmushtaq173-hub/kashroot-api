@@ -136,6 +136,13 @@ export class AuthService {
       this.logger.warn('SMS OTP delivery is not implemented; code stored but not delivered.');
     }
 
+    // DEV ONLY. Outside production the code is also written to the console so
+    // registration is workable without a functioning mail provider. This must
+    // never run in production, where logging a live credential is a leak.
+    if (this.config.get('NODE_ENV') !== 'production') {
+      console.log(`[DEV OTP] ${target} -> ${code} (expires in ${expiryMin}m)`);
+    }
+
     return code;
   }
 
