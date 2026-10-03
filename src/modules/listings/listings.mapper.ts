@@ -1,0 +1,104 @@
+import { Prisma } from '@prisma/client';
+
+/**
+ * The mapping layer between the Prisma Listing entity and the JSON the web
+ * client actually consumes.
+ *
+ * WHY THIS FILE EXISTS
+ * --------------------
+ * The client's PublicListing type (kashroot-web/src/lib/api/buyer.ts) is not the
+ * database shape. It uses `unit`, `stockQuantity`, `commodity`, `originRegion`
+ * (a display string, not an id), `images`, `farmerName` and `trustGate`, none of
+ * which are columns on Listing. Returning raw Prisma rows therefore does not
+ * "mostly work" — the discover page reads `listing.images[0]`, which throws on
+ * undefined rather than rendering an empty state. Every field the client reads
+ * is produced here, deliberately, in one place.
+ */
+
+/**
+ * Every relation the mapper below reads. Shared by list and detail queries.
+ *
+ * Prisma.validator rather than a plain `: Prisma.ListingInclude` annotation:
+ * the annotation widens the type, and GetPayload can then no longer tell that
+ * `farmerProfile` is always present and `category`/`originRegion` are nullable.
+ * The validator keeps the literal shape while still type-checking the argument.
+ */
+export const LISTING_INCLUDE = Prisma.validator<Prisma.ListingInclude>()({
+  farmerProfile: true,
+  category: true,
+  originRegion: true,
+  photos: { orderBy: { sortOrder: 'asc' } },
+  // The Listing side of the ListingCertification join is named `certifications`,
+  // not `listingCertifications` — the join model itself carries the latter name.
+  certifications: { include: { certification: true } },
+});
+
+export type ListingWithRelations = Prisma.ListingGetPayload<{
+  include: typeof LISTING_INCLUDE;
+}>;
+
+/** Matches the frontend's TrustGate union in lib/api/buyer.ts. */
+export type TrustGate = 'buy_now' | 'request_appointment';
+
+/**
+ * The trust gate is hardcoded to the permissive value for now.
+ *
+ * NO TRUST RULE EXISTS IN THIS CODEBASE. The client comment asserts the value is
+ * "backend-computed" and uses it to choose between an instant Buy CTA and a
+ * "request appointment" CTA, but grep for trustGate across src/ and prisma/
+ * returns nothing to compute it from. Defaulting to 'buy_now' is what the
+ * product decision asked for; when the real rule lands (KYC status, trustScore,
+ * order history) it belongs here, in one place.
+ */
+const TRUST_GATE: TrustGate = 'buy_now';
+
+/**
+ * Listing has a `stock` Int column and an `availableQty` Decimal column.
+ * `stock` is the one that matters: orders.service.ts checks
+ * `quantity > listing.stock` and decrements it. `availableQty` is referenced
+ * only by inventory-reservations.service.ts, which is excluded from the build.
+ * So `stock` is the single source of truth for what a buyer can order, and it is
+ * what the client's `stockQuantity` reads.
+ */
+export function toPublicListing(listing: ListingWithRelations) {
+  const certificationNames = listing.certifications.map(
+    (lc) => lc.certification.name,
+  );
+
+  return {
+    id: listing.id,
+    title: listing.title,
+    commodity: listing.category?.name ?? '',
+    description: listing.description ?? '',
+    // Prisma Decimal serialises to a JSON string, but the client types this as
+    // `number` and does arithmetic on it, so convert rather than let "120.0000"
+    // stringify its way into the UI.
+    pricePerUnit: Number(listing.pricePerUnit),
+    currency: listing.currency,
+    unit: listing.unitOfSale,
+    stockQuantity: listing.stock,
+    originRegion: listing.originRegion?.name ?? '',
+    certifications: certificationNames,
+    isOrganic: certificationNames.some((n) => n.toLowerCase() === 'organic'),
+    // Photos exist as ListingPhoto.fileKey rows, but nothing in this codebase
+    // resolves a storage key to a URL (no CDN or bucket base URL is configured
+    // anywhere), so there is no honest value to return yet. An empty array is
+    // what the client handles correctly — `images[0]` then falls through to the
+    // placeholder instead of dereferencing undefined.
+    images: [] as string[],
+    farmerName: listing.farmerProfile.displayName,
+    // No rating rule is implemented: Review.rating exists, but averaging it per
+    // farmer is a new query and a product decision about visibility. The client
+    // type is `number | null` and hides the badge when null, so null is honest.
+    farmerRating: null as number | null,
+    trustGate: TRUST_GATE,
+    createdAt: listing.createdAt.toISOString(),
+
+    // Not required by PublicListing, but FarmerListing (lib/api/farmer.ts) reads
+    // both, so including them lets one shape serve the buyer and farmer screens.
+    status: listing.status,
+    updatedAt: listing.updatedAt.toISOString(),
+  };
+}
+
+export type PublicListing = ReturnType<typeof toPublicListing>;
