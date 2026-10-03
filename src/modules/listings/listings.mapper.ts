@@ -151,6 +151,45 @@ export function toPublicListing(listing: ListingWithRelations) {
     // both, so including them lets one shape serve the buyer and farmer screens.
     status: STATUS_TO_CLIENT[listing.status],
     updatedAt: listing.updatedAt.toISOString(),
+
+    // ─── Edit-form prefill ───────────────────────────────────────────────────
+    // Consumed by the farmer edit form (farmer/listings/[id]/edit). Both were
+    // missing from this payload, which is what blocked that page: a form opened
+    // without them renders blank controls and then saves those blanks back over
+    // real data on submit, so the omission was destructive, not cosmetic.
+
+    /**
+     * Listing has two date columns, harvestStart and harvestEnd, but the form
+     * collects exactly one date — a single `type="date"` input (new/page.tsx:478)
+     * that both create and update read into harvestStart. So harvestStart is the
+     * only column that can round-trip; harvestEnd is deliberately not surfaced
+     * rather than being reported as if it were the same field.
+     *
+     * Sliced to YYYY-MM-DD instead of shipped as a full ISO timestamp because
+     * that is the only format a date input's `value` accepts: given anything
+     * longer the control renders empty, silently losing a date the farmer had
+     * already set. The slice is also why reading UTC is correct — Prisma parses
+     * a date-only string as midnight UTC (`new Date('2026-09-15')` becomes
+     * 2026-09-15T00:00:00.000Z), so toISOString() and the submitted form value
+     * agree on the calendar day and the value round-trips unchanged.
+     */
+    harvestDate: listing.harvestStart
+      ? listing.harvestStart.toISOString().slice(0, 10)
+      : null,
+
+    /**
+     * minOrderQty is a Decimal(12,4) and serialises to the JSON string
+     * "1.0000", so it needs the same conversion pricePerUnit gets above or the
+     * edit form prefills with a quoted decimal.
+     *
+     * Typed as a number rather than the string the form's `type="number"` input
+     * holds. This return shape is PublicListing, shared with the buyer contract,
+     * where its siblings pricePerUnit and stockQuantity are already numbers;
+     * making one quantity a string to save the edit page a String() call would
+     * leave the payload internally inconsistent for no gain, since the edit page
+     * has to convert those two fields anyway.
+     */
+    minimumOrderQuantity: Number(listing.minOrderQty),
   };
 }
 
