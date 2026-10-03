@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ListingStatus, Prisma, RoleName } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuthenticatedUser } from '../../common/types/request-with-user.type';
 import { ListingsQueryDto } from './dto/listings-query.dto';
 import { MyListingsQueryDto } from './dto/my-listings-query.dto';
 import { CreateListingDto } from './dto/create-listing.dto';
@@ -59,14 +60,27 @@ export class ListingsService {
     return { data: rows.map(toPublicListing), total, page, limit };
   }
 
-  /** GET /listings/:id — single listing, public statuses only. */
-  async findOne(id: string): Promise<PublicListing> {
+  /**
+   * GET /listings/:id — a single listing.
+   *
+   * Public statuses are readable by anyone. A non-public status (DRAFT, FROZEN,
+   * ARCHIVED) is readable only by the farmer who owns it or an admin, which is
+   * what lets a farmer open their own draft to edit it.
+   *
+   * Everyone else still gets 404 rather than 403, deliberately: a 403 would
+   * confirm that a listing with that id exists, turning this route into an
+   * existence oracle for other people's unpublished drafts.
+   *
+   * `viewer` is optional because the route is public — an anonymous request
+   * arrives with no identity at all.
+   */
+  async findOne(id: string, viewer?: AuthenticatedUser): Promise<PublicListing> {
     const listing = await this.loadOrThrow(id);
 
     if (!PUBLICLY_VIEWABLE.has(listing.status)) {
-      // 404 rather than 403: an unpublished listing should be indistinguishable
-      // from a nonexistent one to an unauthenticated caller.
-      throw new NotFoundException(`Listing ${id} not found`);
+      if (!this.isOwnerOrAdmin(listing.farmerProfile.userId, viewer)) {
+        throw new NotFoundException(`Listing ${id} not found`);
+      }
     }
 
     return toPublicListing(listing);
@@ -322,6 +336,28 @@ export class ListingsService {
   }
 
   /**
+   * True when the viewer is the farmer behind this listing, or an admin.
+   *
+   * Shared by findOne (may I read this unpublished listing?) and assertOwnership
+   * (may I modify it?). The two must agree — if reading and writing used
+   * different rules, one of them would drift.
+   */
+  private isOwnerOrAdmin(
+    ownerUserId: string,
+    viewer?: AuthenticatedUser,
+  ): boolean {
+    if (!viewer) return false;
+    return this.isAdmin(viewer.roles) || ownerUserId === viewer.sub;
+  }
+
+  private isAdmin(roles: RoleName[]): boolean {
+    return (
+      roles.includes(RoleName.SUPER_ADMIN) ||
+      roles.includes(RoleName.REGIONAL_ADMIN)
+    );
+  }
+
+  /**
    * Confirms the caller may modify this listing. Admins pass; everyone else must
    * own the farmer profile behind it. Without this, any authenticated user could
    * edit or archive any listing on the platform.
@@ -341,10 +377,7 @@ export class ListingsService {
     });
     if (!listing) throw new NotFoundException(`Listing ${listingId} not found`);
 
-    const isAdmin =
-      roles.includes(RoleName.SUPER_ADMIN) || roles.includes(RoleName.REGIONAL_ADMIN);
-
-    if (!isAdmin && listing.farmerProfile.userId !== userId) {
+    if (!this.isAdmin(roles) && listing.farmerProfile.userId !== userId) {
       throw new ForbiddenException('You can only modify your own listings.');
     }
 

@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../common/types/request-with-user.type';
@@ -57,11 +58,29 @@ export class ListingsController {
     return this.listingsService.findMine(user.sub, query);
   }
 
+  /**
+   * Public read, but identity-aware.
+   *
+   * @Public() bypasses the global JwtAuthGuard so anonymous callers get through;
+   * OptionalJwtAuthGuard then attaches the caller's identity if they happen to
+   * present a valid token. Both are needed: without @Public() the global guard
+   * rejects anonymous visitors, and without the optional guard the owner's token
+   * is ignored and they cannot read their own draft.
+   *
+   * A non-public status therefore returns 200 for the owner or an admin and 404
+   * for everyone else — the service makes that decision, not the guard.
+   */
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get(':id')
-  @ApiOperation({ summary: 'Single published listing' })
-  findOne(@Param('id') id: string) {
-    return this.listingsService.findOne(id);
+  @ApiOperation({
+    summary: 'Single listing — public statuses, or any status for its owner/admin',
+  })
+  findOne(
+    @Param('id') id: string,
+    @CurrentUser() viewer?: AuthenticatedUser,
+  ) {
+    return this.listingsService.findOne(id, viewer);
   }
 
   @UseGuards(JwtAuthGuard)
