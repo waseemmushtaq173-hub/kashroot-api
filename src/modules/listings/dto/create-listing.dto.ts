@@ -1,4 +1,4 @@
-import { Transform, Type } from 'class-transformer';
+import { Transform, TransformFnParams, Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
@@ -29,8 +29,17 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
  * 400 before it ever reaches the service.
  */
 
-const toBoolean = ({ value }: { value: unknown }): boolean =>
-  value === true || value === 'true';
+/**
+ * JSON bodies carry real booleans, so this mostly passes through unchanged. It
+ * still reads the raw source object rather than `value` for the same reason as
+ * the query DTO: main.ts sets `transformOptions.enableImplicitConversion`, and
+ * that coercion to Boolean runs before the custom transform, so a transform
+ * reading `value` cannot distinguish 'false' from 'true' if a string arrives.
+ */
+const toBoolean = ({ obj, key }: TransformFnParams): boolean => {
+  const raw = (obj as Record<string, unknown>)[key];
+  return raw === true || raw === 'true';
+};
 
 export class CreateListingDto {
   @ApiProperty({ maxLength: 200 })

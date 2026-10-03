@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { ListingStatus, Prisma } from '@prisma/client';
 
 /**
  * The mapping layer between the Prisma Listing entity and the JSON the web
@@ -36,6 +36,59 @@ export const LISTING_INCLUDE = Prisma.validator<Prisma.ListingInclude>()({
 export type ListingWithRelations = Prisma.ListingGetPayload<{
   include: typeof LISTING_INCLUDE;
 }>;
+
+/**
+ * The client's status vocabulary is not the database's.
+ *
+ * Prisma has five states (DRAFT, ACTIVE, SOLD_OUT, ARCHIVED, FROZEN); the farmer
+ * dashboard is typed against three ('DRAFT' | 'PUBLISHED' | 'SUSPENDED') and
+ * indexes two Records with the value:
+ *
+ *   LISTING_STATUS_LABEL[l.status]   // dashboard/page.tsx:18
+ *   LISTING_STATUS_CLASS[l.status]   // dashboard/page.tsx:24
+ *
+ * Handing it a raw 'ACTIVE' renders an empty badge (both lookups miss) and, worse,
+ * the Unpublish button is gated on `l.status === 'PUBLISHED'` (:138) so a farmer
+ * could publish a listing and then have no way to take it down. The translation
+ * belongs here, next to every other DB-to-client conversion, rather than being
+ * pushed onto the dashboard.
+ */
+export type ClientListingStatus = 'DRAFT' | 'PUBLISHED' | 'SUSPENDED';
+
+const STATUS_TO_CLIENT: Record<ListingStatus, ClientListingStatus> = {
+  DRAFT: 'DRAFT',
+  // Both are live on the marketplace; the difference is stock, which the client
+  // already receives as `stockQuantity` and renders as "0 kg stock".
+  ACTIVE: 'PUBLISHED',
+  SOLD_OUT: 'PUBLISHED',
+  // FROZEN is an admin moderation hold, which is what the dashboard labels
+  // "Suspended". ARCHIVED is unreachable here (findMine excludes it and public
+  // reads 404 on it) but the Record must stay total.
+  FROZEN: 'SUSPENDED',
+  ARCHIVED: 'SUSPENDED',
+};
+
+/**
+ * The inverse map, used to turn a client-facing status filter into the database
+ * values that satisfy it.
+ *
+ * Deliberately not the exact inverse of STATUS_TO_CLIENT: ARCHIVED is omitted, so
+ * `?status=SUSPENDED` cannot resurrect a soft-deleted listing into a farmer's
+ * list. Only the forward map needs to be total.
+ */
+const CLIENT_TO_STATUSES: Record<ClientListingStatus, ListingStatus[]> = {
+  DRAFT: [ListingStatus.DRAFT],
+  PUBLISHED: [ListingStatus.ACTIVE, ListingStatus.SOLD_OUT],
+  SUSPENDED: [ListingStatus.FROZEN],
+};
+
+export function toClientStatus(status: ListingStatus): ClientListingStatus {
+  return STATUS_TO_CLIENT[status];
+}
+
+export function toDbStatuses(status: ClientListingStatus): ListingStatus[] {
+  return CLIENT_TO_STATUSES[status];
+}
 
 /** Matches the frontend's TrustGate union in lib/api/buyer.ts. */
 export type TrustGate = 'buy_now' | 'request_appointment';
@@ -96,7 +149,7 @@ export function toPublicListing(listing: ListingWithRelations) {
 
     // Not required by PublicListing, but FarmerListing (lib/api/farmer.ts) reads
     // both, so including them lets one shape serve the buyer and farmer screens.
-    status: listing.status,
+    status: STATUS_TO_CLIENT[listing.status],
     updatedAt: listing.updatedAt.toISOString(),
   };
 }

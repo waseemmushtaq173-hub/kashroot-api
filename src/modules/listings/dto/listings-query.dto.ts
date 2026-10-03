@@ -1,4 +1,4 @@
-import { Transform, Type } from 'class-transformer';
+import { Transform, TransformFnParams, Type } from 'class-transformer';
 import {
   IsBoolean,
   IsInt,
@@ -20,12 +20,21 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
  */
 
 /**
- * Query strings arrive as text, and class-transformer's implicit conversion
- * would turn the string "false" into Boolean("false") === true. That is the
- * wrong answer for every value except the empty string, so parse it explicitly.
+ * Query strings arrive as text, and because main.ts enables
+ * `transformOptions.enableImplicitConversion`, class-transformer coerces the
+ * value to Boolean *before* this transform runs. Boolean('false') is true, so a
+ * transform that reads `value` sees `true` for every supplied input — it cannot
+ * tell 'false' from 'true'.
+ *
+ * The original string survives only on the raw source object, so read the field
+ * from `obj` by `key`. Measured against the real pipe config:
+ *   reading value    -> 'false' became true   (wrong)
+ *   reading obj[key] -> 'false' became false  (correct)
  */
-const toBoolean = ({ value }: { value: unknown }): boolean =>
-  value === true || value === 'true';
+const toBoolean = ({ obj, key }: TransformFnParams): boolean => {
+  const raw = (obj as Record<string, unknown>)[key];
+  return raw === true || raw === 'true';
+};
 
 export class ListingsQueryDto {
   @ApiPropertyOptional({ description: 'Free-text search against the listing title' })

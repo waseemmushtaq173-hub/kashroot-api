@@ -4,15 +4,17 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, RoleName } from '@prisma/client';
+import { ListingStatus, Prisma, RoleName } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ListingsQueryDto } from './dto/listings-query.dto';
+import { MyListingsQueryDto } from './dto/my-listings-query.dto';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import {
   LISTING_INCLUDE,
   ListingWithRelations,
   PublicListing,
+  toDbStatuses,
   toPublicListing,
 } from './listings.mapper';
 
@@ -68,6 +70,56 @@ export class ListingsService {
     }
 
     return toPublicListing(listing);
+  }
+
+  /**
+   * GET /listings/mine — the calling farmer's own listings, drafts included.
+   *
+   * Unlike the public search this is scoped by the caller's own farmer profile
+   * rather than by status, so it can show DRAFT rows the public route hides.
+   * There is no "listings for an arbitrary farmer" variant: the farmer id comes
+   * from the verified token, never from the query string.
+   */
+  async findMine(
+    userId: string,
+    query: MyListingsQueryDto,
+  ): Promise<{ data: PublicListing[]; total: number; page: number; limit: number }> {
+    const farmerProfile = await this.prisma.farmerProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!farmerProfile) {
+      throw new ForbiddenException('Only farmer accounts have listings.');
+    }
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 12;
+
+    const where: Prisma.ListingWhereInput = {
+      farmerProfileId: farmerProfile.id,
+      // Archived is a soft delete kept for order history, not a state this list
+      // shows: the farmer's own dashboard is a working list, so a deleted
+      // listing drops out of it. Excluding it also keeps every row inside the
+      // client's three-state vocabulary, which has nothing to render 'ARCHIVED'
+      // as. An explicit status filter is honoured instead, but still cannot
+      // reach archived rows (see CLIENT_TO_STATUSES).
+      status: query.status
+        ? { in: toDbStatuses(query.status) }
+        : { not: ListingStatus.ARCHIVED },
+    };
+
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.listing.findMany({
+        where,
+        include: LISTING_INCLUDE,
+        orderBy: { createdAt: Prisma.SortOrder.desc },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.listing.count({ where }),
+    ]);
+
+    return { data: rows.map(toPublicListing), total, page, limit };
   }
 
   /**
@@ -183,6 +235,79 @@ export class ListingsService {
     });
 
     return { id, status: 'ARCHIVED', message: 'Listing archived.' };
+  }
+
+  /** PATCH /listings/:id/publish — make a listing visible on the marketplace. */
+  async publish(
+    id: string,
+    userId: string,
+    roles: RoleName[],
+  ): Promise<PublicListing> {
+    return this.setPublished(id, userId, roles, true);
+  }
+
+  /** PATCH /listings/:id/unpublish — return a listing to DRAFT. */
+  async unpublish(
+    id: string,
+    userId: string,
+    roles: RoleName[],
+  ): Promise<PublicListing> {
+    return this.setPublished(id, userId, roles, false);
+  }
+
+  /**
+   * Drives the DRAFT <-> ACTIVE transition behind publish and unpublish.
+   *
+   * NOTE — the KYC gate is NOT implemented. The web client documents
+   * `PATCH /listings/:id/publish` as "requires VERIFIED KYC (enforced by
+   * backend)" (lib/api/farmer.ts:64) and the create-listing page says the same.
+   * Nothing enforces it: any authenticated farmer can publish immediately. When
+   * KYC lands, the check goes here, after assertOwnership and before the update,
+   * so every caller of publish inherits it.
+   */
+  private async setPublished(
+    id: string,
+    userId: string,
+    roles: RoleName[],
+    publish: boolean,
+  ): Promise<PublicListing> {
+    await this.assertOwnership(id, userId, roles);
+
+    const current = await this.prisma.listing.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    if (!current) throw new NotFoundException(`Listing ${id} not found`);
+
+    // FROZEN is set by moderation, not by the farmer. Allowing them to flip it
+    // would let anyone lift a hold placed on their own listing, so it is checked
+    // before the transition rather than after.
+    if (current.status === ListingStatus.FROZEN) {
+      throw new ForbiddenException(
+        'This listing is on hold following a moderation review and cannot be ' +
+          'published or unpublished from the dashboard.',
+      );
+    }
+
+    if (current.status === ListingStatus.ARCHIVED) {
+      throw new BadRequestException(
+        'This listing has been archived and can no longer be published.',
+      );
+    }
+
+    const next: ListingStatus = publish
+      ? ListingStatus.ACTIVE
+      : ListingStatus.DRAFT;
+
+    // Idempotent on purpose: re-publishing a live listing, or unpublishing one
+    // that is already a draft, is the state the caller asked for. The dashboard
+    // invalidates and refetches on success, so returning the row beats an error
+    // on what is a harmless double-click.
+    if (current.status !== next) {
+      await this.prisma.listing.update({ where: { id }, data: { status: next } });
+    }
+
+    return toPublicListing(await this.loadOrThrow(id));
   }
 
   // ── internals ────────────────────────────────────────────────────────────
@@ -347,16 +472,33 @@ export class ListingsService {
       .split(',')
       .map((n) => n.trim())
       .filter((n) => n.length > 0);
-    if (query.isOrganic) certificationNames.push('Organic');
+    if (query.isOrganic === true) certificationNames.push('Organic');
+
+    // `some` and `none` are composed into one object rather than assigned to
+    // where.certifications separately, because the second assignment would
+    // silently overwrite the first whenever a caller sends both
+    // isOrganic=false and an explicit certifications list.
+    const certificationFilter: Prisma.ListingCertificationListRelationFilter = {};
 
     if (certificationNames.length > 0) {
-      where.certifications = {
-        some: {
-          certification: {
-            name: { in: certificationNames, mode: 'insensitive' },
-          },
+      certificationFilter.some = {
+        certification: {
+          name: { in: certificationNames, mode: 'insensitive' },
         },
       };
+    }
+
+    // The false case needs its own branch. Testing `if (query.isOrganic)` treats
+    // false exactly like "param not sent", so a buyer filtering for non-organic
+    // produce received the organic listings as well — the filter did nothing.
+    if (query.isOrganic === false) {
+      certificationFilter.none = {
+        certification: { name: { equals: 'Organic', mode: 'insensitive' } },
+      };
+    }
+
+    if (Object.keys(certificationFilter).length > 0) {
+      where.certifications = certificationFilter;
     }
 
     // query.trustGate is accepted for client-contract compatibility and
