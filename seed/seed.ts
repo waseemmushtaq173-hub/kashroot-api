@@ -19,6 +19,22 @@ async function main() {
   console.log('\ud83c Seeding KashRoot development database...');
 
   // --- Regions ---
+  /*
+   * The origins offered by the farmer listing form. Names must match
+   * kashroot-web/src/lib/listing-options.ts character-for-character:
+   * ListingsService.resolveRegionId matches a submitted region against
+   * Region.name (exact, case-insensitive) and stores null when nothing matches,
+   * without raising an error. So a name that differs by so much as an
+   * ampersand is a listing saved with no origin and no signal to anyone.
+   *
+   * Only 2 of these existed when the form offered 14, which meant 12 states
+   * could be selected by a farmer and then silently discarded.
+   *
+   * KNOWN MISMATCH: the Kashmir row is named 'Kashmir Valley' while the form
+   * offers 'Jammu & Kashmir', so that one option still resolves to null. Left
+   * unchanged deliberately — renaming a live region row is a data decision, not
+   * a seeding one.
+   */
   const kashmir = await prisma.region.upsert({
     where: { id: 'region-kashmir' },
     update: {},
@@ -30,16 +46,32 @@ async function main() {
     },
   });
 
-  const punjab = await prisma.region.upsert({
-    where: { id: 'region-punjab' },
-    update: {},
-    create: {
-      id: 'region-punjab',
-      name: 'Punjab',
-      countryCode: 'IN',
-      isActive: true,
-    },
-  });
+  const OTHER_REGIONS = [
+    'Punjab',
+    'Himachal Pradesh',
+    'Uttarakhand',
+    'Maharashtra',
+    'Karnataka',
+    'Kerala',
+    'Tamil Nadu',
+    'Andhra Pradesh',
+    'West Bengal',
+    'Rajasthan',
+    'Gujarat',
+    'Madhya Pradesh',
+    'Uttar Pradesh',
+  ];
+
+  for (const name of OTHER_REGIONS) {
+    // Deterministic ids (region-uttar-pradesh) rather than generated uuids, so
+    // re-running the seed updates these rows instead of duplicating them.
+    const id = `region-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+    await prisma.region.upsert({
+      where: { id },
+      update: { name },
+      create: { id, name, countryCode: 'IN', isActive: true },
+    });
+  }
 
   // --- Roles & Permissions ---
   const roleNames: RoleName[] = [
