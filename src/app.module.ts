@@ -12,6 +12,7 @@ import { OrdersModule } from './modules/orders/orders.module';
 import { AiAssistantModule } from './modules/ai-assistant/ai-assistant.module';
 import { ExpertKycModule } from './modules/expert-kyc/expert-kyc.module';
 import { MandiPricesModule } from './modules/mandi-prices/mandi-prices.module';
+import { TrackingModule } from './modules/tracking/tracking.module';
 import { EscrowModule } from './modules/escrow/escrow.module';
 import { AgroGuardTesterModule } from './modules/agroguard-tester/agroguard-tester.module';
 // import { AdvisoryModule } from './modules/advisory/advisory.module';
@@ -51,6 +52,7 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
     AiAssistantModule,
     ExpertKycModule,
     MandiPricesModule,
+    TrackingModule,
     EscrowModule,
     AgroGuardTesterModule,
     // AdvisoryModule,

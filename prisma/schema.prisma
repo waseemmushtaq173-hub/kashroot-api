@@ -41,6 +41,8 @@ model User {
   appointmentNotes   AppointmentNote[]
   orderStatusChanges OrderStatusHistory[]
   disputesOpened     Dispute[]            @relation("OpenedDisputes")
+  SellerProfile      SellerProfile?
+  ProviderProfile    ProviderProfile?
 
   @@map("users")
 }
@@ -73,6 +75,8 @@ enum RoleName {
   TESTER
   EXPERT
   SYSTEM
+  SELLER
+  PROVIDER
 
   @@map("role_name")
 }
@@ -1123,4 +1127,80 @@ model FarmingAdvisory {
   @@index([category])
   @@index([isGovVerified, updatedAt])
   @@map("farming_advisories")
+}
+
+// ============================================================
+// SELLERS, PROVIDERS & SPECIALIZED LISTINGS (PHASE 2)
+// ============================================================
+
+model SellerProfile {
+  id           String   @id @default(uuid())
+  userId       String   @unique @map("user_id")
+  businessName String   @map("business_name")
+  gstin        String?
+  trustScore   Decimal  @default(50) @db.Decimal(5, 2)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hardwareListings HardwareListing[]
+
+  @@map("seller_profiles")
+}
+
+model ProviderProfile {
+  id                String   @id @default(uuid())
+  userId            String   @unique @map("user_id")
+  agencyName        String   @map("agency_name")
+  serviceAreaRadius Int      @default(50) @map("service_area_radius_km")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rentalListings  RentalListing[]
+  serviceListings ServiceListing[]
+
+  @@map("provider_profiles")
+}
+
+model HardwareListing {
+  id              String   @id @default(uuid())
+  sellerProfileId String   @map("seller_profile_id")
+  title           String
+  brand           String
+  modelNumber     String?  @map("model_number")
+  price           Decimal  @db.Decimal(12, 4)
+  specifications  Json
+  condition       String // "NEW", "REFURBISHED"
+  warrantyMonths  Int?     @map("warranty_months")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  sellerProfile SellerProfile @relation(fields: [sellerProfileId], references: [id])
+
+  @@map("hardware_listings")
+}
+
+model RentalListing {
+  id                String   @id @default(uuid())
+  providerProfileId String   @map("provider_profile_id")
+  equipmentType     String   @map("equipment_type")
+  dailyRate         Decimal  @map("daily_rate") @db.Decimal(12, 4)
+  depositRequired   Decimal  @map("deposit_required") @db.Decimal(12, 4)
+  specifications    Json
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  providerProfile ProviderProfile @relation(fields: [providerProfileId], references: [id])
+
+  @@map("rental_listings")
+}
+
+model ServiceListing {
+  id                String   @id @default(uuid())
+  providerProfileId String   @map("provider_profile_id")
+  serviceType       String   @map("service_type")
+  baseRate          Decimal  @map("base_rate") @db.Decimal(12, 4)
+  unit              String
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  providerProfile ProviderProfile @relation(fields: [providerProfileId], references: [id])
+
+  @@map("service_listings")
 }
