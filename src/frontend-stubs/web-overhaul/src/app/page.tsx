@@ -79,17 +79,17 @@ export default function HomePage() {
       <main className="mx-auto max-w-7xl px-4 pb-32 pt-8 sm:px-6 sm:pt-12 lg:px-8">
         <section className={`max-w-2xl rounded-[2rem] p-6 sm:p-9 ${GLASS.panel}`}>
           <p className="inline-flex rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-800 ring-1 ring-emerald-200">
-            Jammu &amp; Kashmir’s agri-business ecosystem
+            The agri-business ecosystem
           </p>
           <h1 className="mt-5 text-4xl font-semibold tracking-tight text-slate-900 [text-wrap:balance] sm:text-5xl lg:text-6xl">
-            Kashmir’s harvest,{' '}
+            Every harvest,{' '}
             <span className="bg-gradient-to-r from-emerald-700 to-teal-700 bg-clip-text text-transparent">
               traded with trust.
             </span>
           </h1>
           <p className="mt-4 max-w-xl text-base leading-relaxed text-slate-700 sm:text-lg">
-            Escrow-protected payments, live mandi rates and transparent price comparison for the growers,
-            traders and buyers of J&amp;K.
+            Escrow-protected payments, live mandi rates and transparent price comparison for growers, traders
+            and buyers.
           </p>
         </section>
 

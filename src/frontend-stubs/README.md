@@ -59,7 +59,7 @@ src/frontend-stubs/
   api.ts / types.ts          # (existing) API client + backend contract mirrors
   AppShellExample.tsx        # how AuthProvider + RoleLayoutRouter compose
   web-overhaul/              # bright glass landing page, portal themes, role logins
-                             # and KYC panel — mirrors kashroot-web's src/; see its README
+                             # and KYC panel — mirrors kashroot-web's root (src/ + public/); see its README
 ```
 
 ## Color palette

@@ -166,7 +166,7 @@ export function RoleLoginForm({
               ))}
             </ul>
           </div>
-          <p className="text-xs text-slate-600">Escrow-protected trade · Built for Jammu &amp; Kashmir</p>
+          <p className="text-xs text-slate-600">Escrow-protected trade · Verified growers, traders and buyers</p>
         </section>
 
         <section aria-labelledby={ids.heading} className="bg-white/70 p-6 sm:p-10">

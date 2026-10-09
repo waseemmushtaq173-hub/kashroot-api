@@ -25,7 +25,7 @@ export function FarmerLogin({ next }: { next?: string }) {
       icon={<LeafIcon className="h-6 w-6" />}
       eyebrow="Farmer portal"
       headline="Manage your orchards"
-      description="Track today’s mandi rates, list your harvest and get paid safely through escrow — from Sopore to Shopian."
+      description="Track today’s mandi rates, list your harvest and get paid safely through escrow."
       highlights={[
         'Live rates from your nearest mandi',
         'List apples, saffron, walnuts and more',

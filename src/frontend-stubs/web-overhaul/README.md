@@ -1,13 +1,15 @@
 # Kashroot web overhaul — bright glass UI, role logins, smart KYC
 
-Drop-in files for the **kashroot-web** Next.js app. Every path below mirrors the
-web repo's `src/` folder, so copying is one command:
+Drop-in files for the **kashroot-web** Next.js app. This folder mirrors the web
+repo's root — `src/` for code, `public/` for the hero photographs — so copying is
+one command:
 
 ```bash
 # from the kashroot-web repo root
-cp -R ../kashroot-api/src/frontend-stubs/web-overhaul/. src/
-rm src/README.md   # this file
+cp -R ../kashroot-api/src/frontend-stubs/web-overhaul/{src,public} .
 ```
+
+File paths below are relative to `src/` unless they start with `public/`.
 
 Like the other frontend stubs, these files are excluded from the API build
 (`src/frontend-stubs` is in the API's tsconfig `exclude`).
@@ -19,7 +21,7 @@ Like the other frontend stubs, these files are excluded from the API build
 | Next.js 14+ (App Router) with a `src/` folder | `@/*` must resolve to `src/*` (the create-next-app default) |
 | React 18 or 19 | no `ref`-as-prop or other React 19-only APIs used |
 | Tailwind CSS 3.4+ or 4.x, default colour palette | v3: `content` must include `./src/**/*.{ts,tsx}` (the theme classes live in `src/lib`) |
-| `public/spring.jpeg`, `summer.jpeg`, `autumn.jpeg`, `winter.jpeg` | the hero photographs |
+| `public/seasons/*.jpg` (included) | the five hero photographs |
 | **No new npm packages** | icons are inline SVG (`components/ui/icons.tsx`) |
 
 Environment variables (both optional):
@@ -33,9 +35,10 @@ Environment variables (both optional):
 
 | File | Task | What it is |
 | --- | --- | --- |
-| `components/layout/HeroShowcase.tsx` | 1 | Full-screen seasonal crossfade (7s) + glass season badge, bottom-right |
+| `components/layout/HeroShowcase.tsx` | 1 | Full-screen photo crossfade (7s) + small season badge, bottom-right |
 | `app/page.tsx` | 1 | Landing page: headline + exactly three portal cards over the slideshow |
-| `lib/seasons.ts` | 1 | Season names/photos; `seasonForDate()` (IST) picks the opening slide |
+| `lib/seasons.ts` | 1 | The slides: photo, season, crop focus; `seasonForDate()` (IST) picks the opening slide |
+| `public/seasons/*.jpg` | 1 | spring-meadow, summer-lake, autumn-garden, winter-road, winter-lake |
 | `lib/portals.ts` | 2 | The three portals: routes, copy, icons and bright palettes (`GLASS` surfaces) |
 | `components/layout/PortalShell.tsx` | 2 | Bright themed frame + light `PortalHeader` for inner portals |
 | `components/price-comparison/PriceComparisonHeader.tsx` | 2 | **The header contrast fix** |
@@ -56,18 +59,24 @@ Environment variables (both optional):
 - Photos crossfade every 7s; the incoming slide fades in **over** the outgoing one,
   so there is no see-through dip mid-fade. A slow zoom runs only under
   `motion-safe`.
-- The badge names the season on screen ("Spring Almond Blossoms · Badamwari,
-  Srinagar"), shows a progress fill, lets the user jump between seasons, and has a
-  pause button (auto-moving content over 5s must be pausable — WCAG 2.2.2).
-  Rotation also stops while the tab is hidden.
-- The page opens on the **current** Kashmir season (`seasonForDate`, read in IST)
-  and re-renders hourly (`revalidate = 3600`).
-- Relabel seasons in `lib/seasons.ts` to match your actual photographs.
+- The badge shows only the season, in small lowercase letters ("spring",
+  "winter") — no place names; the photographs speak for themselves. It also has
+  slide dots with a progress fill and a pause button (auto-moving content over 5s
+  must be pausable — WCAG 2.2.2). Rotation also stops while the tab is hidden.
+- The page opens on the **current** season's first photo (`seasonForDate`, read in
+  IST) and re-renders hourly (`revalidate = 3600`).
+- Add, remove or reorder photos in `SEASON_SLIDES` (`lib/seasons.ts`); a season
+  can have several. Each slide's `focus` (CSS `object-position`) picks the part of
+  the photo kept when the screen crops it — portrait photos on a wide monitor
+  keep only a horizontal band, so spring and winter-road are focused on their peaks.
+- The supplied photos are 720–1280px wide. On large monitors they are upscaled
+  and look soft; replacing them with ≥1920px-wide landscape versions (same file
+  names) makes the hero crisp with no code change.
 
 ## Task 2 — Bright portals and the Price Comparison header fix
 
 The three route layouts wrap every Escrow, Mandi and Price Comparison page in
-`PortalShell`: Emerald Trust (teal/emerald), Saffron Gold (amber/orange) and Dal
+`PortalShell`: Emerald Trust (teal/emerald), Saffron Gold (amber/orange) and
 Lake Azure (sky/indigo). Your existing pages still carry their own dark
 wrappers, so strip those as you go:
 
@@ -107,7 +116,7 @@ Back" page. Each has its own story and palette:
 | Component | Headline | Palette | Identifier |
 | --- | --- | --- | --- |
 | `<FarmerLogin />` | Manage your orchards | orchard green | mobile-first |
-| `<BuyerLogin />` | Source authentic produce | Dal Lake azure | work email |
+| `<BuyerLogin />` | Source authentic produce | lake azure | work email |
 | `<SellerLogin />` | Grow your agri-business | saffron gold | business email |
 
 ### Routing the portal buttons

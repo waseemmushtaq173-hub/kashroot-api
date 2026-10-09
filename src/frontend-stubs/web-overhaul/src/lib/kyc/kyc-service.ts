@@ -88,7 +88,7 @@ async function mockIfscLookup(ifsc: string, signal?: AbortSignal): Promise<IfscD
   await delay(700, signal);
   const bank = BANK_CODES[ifsc.slice(0, 4)];
   if (!bank || !isValidIfsc(ifsc)) throw new IfscNotFoundError(ifsc);
-  return { ifsc, bank, branch: `Branch ${ifsc.slice(5)} (mock lookup)`, city: 'Srinagar', state: 'Jammu and Kashmir' };
+  return { ifsc, bank, branch: `Branch ${ifsc.slice(5)} (mock lookup)` };
 }
 
 // ---------------------------------------------------------------------------

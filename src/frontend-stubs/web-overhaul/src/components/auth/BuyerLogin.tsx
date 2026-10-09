@@ -1,4 +1,4 @@
-/** Buyer sign-in — Dal Lake azure, email-first: "Source authentic produce". */
+/** Buyer sign-in — lake azure, email-first: "Source authentic produce". */
 import { ShoppingBagIcon } from '@/components/ui/icons';
 
 import { RoleLoginForm, type RoleLoginTheme } from './RoleLoginForm';
@@ -25,7 +25,7 @@ export function BuyerLogin({ next }: { next?: string }) {
       icon={<ShoppingBagIcon className="h-6 w-6" />}
       eyebrow="Buyer portal"
       headline="Source authentic produce"
-      description="Buy saffron, premium apples and dry fruits direct from verified Kashmiri growers — your payment stays in escrow until the goods arrive."
+      description="Buy saffron, premium apples and dry fruits direct from verified growers — your payment stays in escrow until the goods arrive."
       highlights={['Verified growers and traders', 'Compare offers side by side', 'Escrow protection on every order']}
       identifierLabel="Work email or mobile number"
       identifierPlaceholder="you@company.com"

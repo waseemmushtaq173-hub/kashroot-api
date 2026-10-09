@@ -4,8 +4,8 @@
  * headers. Replaces the old dark/black portal chrome.
  *
  *   escrow           Emerald Trust   — teal/emerald, "money is safe"
- *   mandi            Saffron Gold    — amber/orange, the Pampore harvest
- *   priceComparison  Dal Lake Azure  — sky/indigo, calm and analytical
+ *   mandi            Saffron Gold    — amber/orange, warm as harvest
+ *   priceComparison  Lake Azure      — sky/indigo, calm and analytical
  *
  * Every class below is a complete literal string. Tailwind only generates
  * classes it can find verbatim in source, so never assemble these from
@@ -82,7 +82,7 @@ export const PORTALS: Record<PortalId, Portal> = {
     title: 'Live Mandi Rates',
     eyebrow: 'Updated through the day',
     description:
-      'Today’s rates from Sopore, Shopian, Pampore and the boards that matter — so you know the price before you load the truck.',
+      'Today’s rates from the mandis near you — so you know the price before you load the truck.',
     href: '/mandi',
     icon: TrendingUpIcon,
     theme: {
