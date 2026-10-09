@@ -58,6 +58,8 @@ src/frontend-stubs/
     spoken-audio.ts          # pickSpokenClip fallback chain (preferred→hi→en→any)
   api.ts / types.ts          # (existing) API client + backend contract mirrors
   AppShellExample.tsx        # how AuthProvider + RoleLayoutRouter compose
+  web-overhaul/              # bright glass landing page, portal themes, role logins
+                             # and KYC panel — mirrors kashroot-web's src/; see its README
 ```
 
 ## Color palette
