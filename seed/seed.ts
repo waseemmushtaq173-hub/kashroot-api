@@ -5,8 +5,12 @@
  *     Run: NODE_ENV=development npx ts-node -r tsconfig-paths/register seed/seed.ts
  */
 
-import { PrismaClient, RoleName } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import * as argon2 from 'argon2';
+import {
+  PERMISSION_DEFS,
+  SEEDED_ROLE_NAMES,
+} from '../src/modules/rbac/rbac.permissions';
 
 if (process.env.NODE_ENV === 'production') {
   console.error('\u274c Seed script must not run in production. Aborting.');
@@ -74,12 +78,13 @@ async function main() {
   }
 
   // --- Roles & Permissions ---
-  const roleNames: RoleName[] = [
-    'SUPER_ADMIN', 'REGIONAL_ADMIN', 'FARMER',
-    'BUYER', 'LOGISTICS_PARTNER', 'SUPPORT_MODERATOR', 'SYSTEM',
-  ];
+  /*
+   * Both lists come from src/modules/rbac/rbac.permissions.ts so the seeded
+   * rows and the permissions the API enforces can never drift apart. Adding a
+   * role there is all that is needed here.
+   */
   const roles: Record<string, { id: string }> = {};
-  for (const name of roleNames) {
+  for (const name of SEEDED_ROLE_NAMES) {
     const role = await prisma.role.upsert({
       where: { name },
       update: {},
@@ -88,34 +93,7 @@ async function main() {
     roles[name] = role;
   }
 
-  const permissionDefs = [
-    { key: 'user:suspend:global',        roles: ['SUPER_ADMIN'] },
-    { key: 'user:suspend:regional',      roles: ['SUPER_ADMIN', 'REGIONAL_ADMIN'] },
-    { key: 'kyc:review',                 roles: ['SUPER_ADMIN', 'REGIONAL_ADMIN'] },
-    { key: 'kyc:document:read',          roles: ['SUPER_ADMIN', 'REGIONAL_ADMIN'] },
-    { key: 'kyc:submit:own',             roles: ['SUPER_ADMIN', 'FARMER'] },
-    { key: 'kyc:read:own',               roles: ['SUPER_ADMIN', 'FARMER'] },
-    { key: 'listing:create:own',         roles: ['SUPER_ADMIN', 'FARMER'] },
-    { key: 'listing:update:own',         roles: ['SUPER_ADMIN', 'FARMER'] },
-    { key: 'listing:freeze',             roles: ['SUPER_ADMIN', 'REGIONAL_ADMIN', 'SUPPORT_MODERATOR'] },
-    { key: 'listing:read:all',           roles: ['SUPER_ADMIN', 'REGIONAL_ADMIN', 'BUYER', 'SUPPORT_MODERATOR'] },
-    { key: 'appointment:create:own',     roles: ['SUPER_ADMIN', 'BUYER'] },
-    { key: 'appointment:approve:own',    roles: ['SUPER_ADMIN', 'FARMER'] },
-    { key: 'order:place',                roles: ['SUPER_ADMIN', 'BUYER'] },
-    { key: 'order:refund:regional',      roles: ['SUPER_ADMIN', 'REGIONAL_ADMIN'] },
-    { key: 'order:refund:global',        roles: ['SUPER_ADMIN'] },
-    { key: 'shipment:update:assigned',   roles: ['SUPER_ADMIN', 'LOGISTICS_PARTNER'] },
-    { key: 'dispute:read',               roles: ['SUPER_ADMIN', 'REGIONAL_ADMIN', 'SUPPORT_MODERATOR'] },
-    { key: 'dispute:resolve',            roles: ['SUPER_ADMIN', 'REGIONAL_ADMIN'] },
-    { key: 'analytics:global',           roles: ['SUPER_ADMIN'] },
-    { key: 'analytics:regional',         roles: ['SUPER_ADMIN', 'REGIONAL_ADMIN'] },
-    { key: 'analytics:own',              roles: ['SUPER_ADMIN', 'FARMER', 'BUYER'] },
-    { key: 'region:configure',           roles: ['SUPER_ADMIN'] },
-    { key: 'fee:configure',              roles: ['SUPER_ADMIN'] },
-    { key: 'role:assign',                roles: ['SUPER_ADMIN'] },
-  ];
-
-  for (const def of permissionDefs) {
+  for (const def of PERMISSION_DEFS) {
     const perm = await prisma.permission.upsert({
       where: { key: def.key },
       update: {},

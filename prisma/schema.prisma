@@ -41,6 +41,7 @@ model User {
   appointmentNotes   AppointmentNote[]
   orderStatusChanges OrderStatusHistory[]
   disputesOpened     Dispute[]            @relation("OpenedDisputes")
+  kycSubmissions     KycSubmission[]
   SellerProfile      SellerProfile?
   ProviderProfile    ProviderProfile?
 
@@ -1203,4 +1204,51 @@ model ServiceListing {
   providerProfile ProviderProfile @relation(fields: [providerProfileId], references: [id])
 
   @@map("service_listings")
+}
+
+// ---------------------------------------------------------------------------
+// KYC submissions (farmer / buyer / seller onboarding verification)
+//
+// Separate from KycDocument (farmer file uploads) and ExpertKycDocument
+// (expert credentials): this row is the structured identity + bank record the
+// web KYC panel collects, one per user per attempt.
+//
+// Privacy: UIDAI rules forbid storing an Aadhaar number outside a licensed
+// vault, so only the verifier's reference and the last four digits are kept.
+// The bank account number is AES-256 encrypted with ENCRYPTION_KEY, the same
+// key and format used for User.mfaSecret; accountNumberLast4 exists so lists
+// and receipts can be rendered without decrypting anything.
+// ---------------------------------------------------------------------------
+model KycSubmission {
+  id                 String             @id @default(uuid())
+  userId             String             @map("user_id")
+  role               RoleName
+  identityMethod     KycIdentityMethod  @map("identity_method")
+  referenceId        String             @map("reference_id") // verifier's txn/consent id
+  aadhaarLast4       String             @map("aadhaar_last4") @db.VarChar(4)
+  pan                String             @db.VarChar(10)
+  ifsc               String             @db.VarChar(11)
+  bankName           String             @map("bank_name")
+  branch             String
+  accountNumberEnc   Bytes              @map("account_number_enc") // AES-256 encrypted
+  accountNumberLast4 String             @map("account_number_last4") @db.VarChar(4)
+  status             VerificationStatus @default(PENDING)
+  reviewNotes        String?            @map("review_notes")
+  reviewedBy         String?            @map("reviewed_by")
+  reviewedAt         DateTime?          @map("reviewed_at")
+  submittedAt        DateTime           @default(now()) @map("submitted_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status, submittedAt])
+  @@map("kyc_submissions")
+}
+
+enum KycIdentityMethod {
+  DIGILOCKER
+  AADHAAR_OTP
+
+  @@map("kyc_identity_method")
 }

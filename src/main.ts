@@ -5,6 +5,11 @@ import { ConfigService } from '@nestjs/config';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import {
+  buildCorsOriginCheck,
+  CAPACITOR_ORIGINS,
+  resolveAllowedOrigins,
+} from './common/utils/cors-origins';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -27,16 +32,23 @@ async function bootstrap() {
 
   // ----------------------------------------------------------------
   // CORS — locked to known origins only
+  //
+  // CORS_ORIGINS is a comma-separated list for the origins that vary per
+  // deployment (preview URLs, a staging web host, a packaged mobile build).
+  // FRONTEND_URL stays the single source for the primary web origin.
   // ----------------------------------------------------------------
-  const allowedOrigins = [
+  const allowedOrigins = resolveAllowedOrigins([
     config.get('FRONTEND_URL', 'http://localhost:3000'),
+    config.get<string>('CORS_ORIGINS'),
+    ...CAPACITOR_ORIGINS,
     ...(isDev ? ['http://localhost:3001'] : []),
-  ];
+  ]);
   app.enableCors({
-  origin: true,
-  credentials: true,
-  methods: ['GET', 'HEAD', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+    origin: buildCorsOriginCheck(allowedOrigins),
+    credentials: true,
+    methods: ['GET', 'HEAD', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
   });
+  console.log(`CORS allowed origins: ${allowedOrigins.join(', ')}`);
   // ----------------------------------------------------------------
   // Cookie parser (required for httpOnly refresh token cookie)
   // ----------------------------------------------------------------

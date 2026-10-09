@@ -23,18 +23,17 @@ import { authenticator } from 'otplib';
 import {
   randomBytes,
   randomInt,
-  createCipheriv,
-  createDecipheriv,
   timingSafeEqual,
 } from 'crypto';
 import { Response } from 'express';
+import { FieldEncryptionService } from '../../common/utils/field-encryption.service';
 
 /**
  * Roles a user may assign to themselves at registration.
  * RegisterDto.role is a free-form string, so without this allowlist a caller
  * could request SUPER_ADMIN and be granted it.
  */
-const SELF_REGISTERABLE_ROLES: readonly RoleName[] = ['FARMER', 'BUYER'];
+const SELF_REGISTERABLE_ROLES: readonly RoleName[] = ['FARMER', 'BUYER', 'SELLER'];
 
 /** Default buyer classification until the buyer completes profile setup. */
 const DEFAULT_BUYER_TYPE = 'DOMESTIC_OTHER_REGION' as const;
@@ -51,6 +50,7 @@ export class AuthService implements OnModuleInit {
     private readonly config: ConfigService,
     private readonly rbacService: RbacService,
     private readonly mailService: MailService,
+    private readonly encryption: FieldEncryptionService,
   ) {}
 
   /**
@@ -60,43 +60,7 @@ export class AuthService implements OnModuleInit {
    * MFA request from a user who has no idea why.
    */
   onModuleInit(): void {
-    this.getEncryptionKey();
-  }
-
-  /**
-   * Reads and validates ENCRYPTION_KEY, returning it as raw bytes.
-   *
-   * AES-256 needs exactly 32 bytes, and Buffer.from(value, 'hex') does not
-   * reject a bad value — it stops at the first non-hex character and silently
-   * returns whatever it parsed, which for a passphrase-shaped value is zero
-   * bytes. That zero-length key is what reaches createCipheriv and throws
-   * "Invalid key length" at request time. Validating the string first is the
-   * only way to catch it before then.
-   */
-  private getEncryptionKey(): Buffer {
-    // Trailing whitespace is stripped defensively: a CRLF line ending in .env
-    // can otherwise leave a stray character that fails an exact-length check.
-    const configured = (this.config.get<string>('ENCRYPTION_KEY') ?? '').trim();
-
-    if (configured.length === 0) {
-      throw new Error(
-        'ENCRYPTION_KEY is not set. Generate one with: ' +
-          `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`,
-      );
-    }
-
-    if (!/^[0-9a-fA-F]{64}$/.test(configured)) {
-      // Only the length is reported. Echoing the value would copy a secret into
-      // the logs and any error tracker that captures startup failures.
-      throw new Error(
-        'ENCRYPTION_KEY must be exactly 64 hexadecimal characters ' +
-          `(32 bytes for AES-256); received ${configured.length} character(s). ` +
-          'Generate a valid key with: ' +
-          `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`,
-      );
-    }
-
-    return Buffer.from(configured, 'hex');
+    this.encryption.getEncryptionKey();
   }
 
   async register(dto: RegisterDto): Promise<{ message: string }> {
@@ -144,9 +108,7 @@ export class AuthService implements OnModuleInit {
         passwordHash,
         status: 'PENDING_VERIFICATION',
         userRoles: { create: { roleId: role.id } },
-        ...(requestedRole === 'FARMER'
-          ? { farmerProfile: { create: { displayName } } }
-          : { buyerProfile: { create: { displayName, buyerType: DEFAULT_BUYER_TYPE } } }),
+        ...this.profileForRole(requestedRole, displayName),
       },
     });
 
@@ -155,6 +117,36 @@ export class AuthService implements OnModuleInit {
     // The OTP is deliberately NOT returned here: echoing it would let a caller
     // activate any account they just registered without access to the inbox.
     return { message: 'Registration successful. Please verify your account with the OTP sent.' };
+  }
+
+  /**
+   * The nested profile row that belongs with a self-registered role.
+   *
+   * Written as an exhaustive switch rather than a FARMER/else ternary: the
+   * ternary sent every non-farmer down the buyer branch, so adding SELLER to
+   * SELF_REGISTERABLE_ROLES would have silently given each new seller a
+   * BuyerProfile and no SellerProfile. FARMER and BUYER produce exactly the
+   * rows they did before.
+   *
+   * SELF_REGISTERABLE_ROLES is validated by the caller, so the default is
+   * unreachable; it throws rather than guessing a profile for a role nobody
+   * has mapped yet.
+   */
+  private profileForRole(role: RoleName, displayName: string) {
+    switch (role) {
+      case 'FARMER':
+        return { farmerProfile: { create: { displayName } } };
+      case 'BUYER':
+        return { buyerProfile: { create: { displayName, buyerType: DEFAULT_BUYER_TYPE } } };
+      case 'SELLER':
+        // SellerProfile.businessName is required and the registration form
+        // collects only a name, so the display name stands in until the seller
+        // completes profile setup.
+        return { SellerProfile: { create: { businessName: displayName } } };
+      default:
+        this.logger.error(`No profile mapping for self-registerable role ${role}.`);
+        throw new InternalServerErrorException('Role configuration missing.');
+    }
   }
 
   /**
@@ -483,24 +475,17 @@ export class AuthService implements OnModuleInit {
   }
 
   /**
-   * AES-256-CBC with no authentication tag: the ciphertext is malleable and
-   * corruption is not detected. Migrating to aes-256-gcm would invalidate
-   * already-stored secrets, so it is tracked as a separate fix.
+   * TOTP seeds and KYC bank account numbers share one key, format and
+   * validation path — see FieldEncryptionService, which these two methods were
+   * extracted into. The stored bytes are unchanged, so secrets written by
+   * earlier builds still decrypt.
    */
   private encryptMfaSecret(plaintext: string): Buffer {
-    const key = this.getEncryptionKey();
-    const iv  = randomBytes(16);
-    const cipher = createCipheriv('aes-256-cbc', key, iv);
-    const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
-    return Buffer.concat([iv, encrypted]);
+    return this.encryption.encrypt(plaintext);
   }
 
   private decryptMfaSecret(data: Buffer): string {
-    const key       = this.getEncryptionKey();
-    const iv        = data.subarray(0, 16);
-    const encrypted = data.subarray(16);
-    const decipher  = createDecipheriv('aes-256-cbc', key, iv);
-    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
+    return this.encryption.decrypt(data);
   }
 
   private parseMs(duration: string): number {

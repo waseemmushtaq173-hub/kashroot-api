@@ -9,6 +9,7 @@ import { RefreshStrategy } from './strategies/refresh.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { RbacModule } from '../rbac/rbac.module';
 import { PrismaService } from '../../prisma/prisma.service';
+import { FieldEncryptionService } from '../../common/utils/field-encryption.service';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { PrismaService } from '../../prisma/prisma.service';
   providers: [
     AuthService,
     PrismaService,
+    FieldEncryptionService,
     JwtStrategy,
     RefreshStrategy,
     GoogleStrategy,

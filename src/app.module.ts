@@ -11,6 +11,7 @@ import { OrdersModule } from './modules/orders/orders.module';
 // import { AppointmentsModule } from './modules/appointments/appointments.module';
 import { AiAssistantModule } from './modules/ai-assistant/ai-assistant.module';
 import { ExpertKycModule } from './modules/expert-kyc/expert-kyc.module';
+import { KycModule } from './modules/kyc/kyc.module';
 import { MandiPricesModule } from './modules/mandi-prices/mandi-prices.module';
 import { TrackingModule } from './modules/tracking/tracking.module';
 import { EscrowModule } from './modules/escrow/escrow.module';
@@ -51,6 +52,7 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
     // AppointmentsModule,
     AiAssistantModule,
     ExpertKycModule,
+    KycModule,
     MandiPricesModule,
     TrackingModule,
     EscrowModule,
