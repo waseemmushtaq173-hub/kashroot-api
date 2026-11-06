@@ -11,7 +11,7 @@ import {
   resolveAllowedOrigins,
 } from './common/utils/cors-origins';
 
-async function bootstrap() {
+async function createApp() {
   const app = await NestFactory.create(AppModule, {
     // Structured JSON logging; swap for Winston/Pino in production
     logger: ['error', 'warn', 'log'],
@@ -113,15 +113,28 @@ async function bootstrap() {
     res.json({ status: 'ok', timestamp: new Date().toISOString() }),
   );
 
-  // ----------------------------------------------------------------
-  // Start
-  // ----------------------------------------------------------------
-  const port = parseInt(config.get('PORT', '3001'));
-  await app.listen(port);
-  console.log(`KashRoot API listening on port ${port} [${config.get('NODE_ENV', 'development')}]`);
+  await app.init();
+  return app;
 }
 
-bootstrap().catch((err) => {
-  console.error('Fatal bootstrap error:', err);
-  process.exit(1);
-});
+let appPromise: ReturnType<typeof createApp> | undefined;
+
+export default async function handler(req: any, res: any) {
+  appPromise ??= createApp();
+  const app = await appPromise;
+  app.getHttpAdapter().getInstance()(req, res);
+}
+
+if (require.main === module) {
+  createApp()
+    .then(async (app) => {
+      const config = app.get(ConfigService);
+      const port = parseInt(config.get('PORT', '3001'));
+      await app.listen(port);
+      console.log(`KashRoot API listening on port ${port} [${config.get('NODE_ENV', 'development')}]`);
+    })
+    .catch((err) => {
+      console.error('Fatal bootstrap error:', err);
+      process.exit(1);
+    });
+}

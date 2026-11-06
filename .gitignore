@@ -31,3 +31,5 @@ coverage/
 
 # Uploads (local dev)
 uploads/
+.vercel
+.env*
