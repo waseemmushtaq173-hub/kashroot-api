@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { createHash } from 'crypto';
 import { PreferredLanguage } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
@@ -89,8 +88,7 @@ export class EscrowVoiceNotificationService {
 
   /** Stubbed Bhashini/Coqui TTS — deterministic mock clip URL per script+lang. */
   private synthesize(language: PreferredLanguage, event: EscrowVoiceEvent, script: string): string {
-    const clipId = createHash('sha1').update(`${language}:${script}`).digest('hex').slice(0, 16);
-    return `https://cdn.mock.local/tts/escrow/${language.toLowerCase()}/${event.toLowerCase()}-${clipId}.mp3`;
+    throw new Error('Escrow voice notifications are not configured on this site. No TTS provider is set up.');
   }
 }
 

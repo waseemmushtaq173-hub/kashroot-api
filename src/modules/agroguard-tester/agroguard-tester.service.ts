@@ -3,13 +3,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { createHash, randomUUID } from 'crypto';
 import { InspectionVerdict, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
-
-/** Languages we pre-render spoken dosage instructions in (mirrors PreferredLanguage). */
-const SPOKEN_LANGUAGES = ['KASHMIRI', 'URDU', 'HINDI', 'ENGLISH'] as const;
 
 /** Verdict boundary: at/above this the bottle is treated as authentic. */
 const GENUINE_THRESHOLD = 0.7;
@@ -36,8 +32,6 @@ export interface InspectAgencyProductInput {
   scannedBatchNo?: string;
   /** URL of the scan, if the client already uploaded it. */
   scannedBottleImageUrl?: string;
-  /** Raw uploaded scan; simulated-stored when no URL is supplied. */
-  bottleImage?: Express.Multer.File;
   /** Hologram pattern read off the bottle by the scan pipeline. */
   observedHologramPattern?: string;
   /** Did the printed logo visually match the factory logo? */
@@ -91,14 +85,10 @@ export class AgroGuardTesterService {
       );
     }
 
-    const scannedBottleImageUrl =
-      input.scannedBottleImageUrl ??
-      (input.bottleImage
-        ? this.simulateBottleUpload(testerProfileId, input.bottleImage)
-        : undefined);
+    const scannedBottleImageUrl = input.scannedBottleImageUrl ?? undefined;
     if (!scannedBottleImageUrl) {
       throw new BadRequestException(
-        'A scanned bottle image (upload or URL) is required.',
+        'A scanned bottle image URL is required.',
       );
     }
 
@@ -178,20 +168,16 @@ export class AgroGuardTesterService {
       targetCrops: 'Apple',
       factoryBatchPrefix: 'FIL-SS-',
       factoryHologramPattern: 'FIL-HOLO-3D-STAR',
-      goldenImageUrl: 'https://cdn.mock.local/agroguard/golden/superstar.png',
+      goldenImageUrl: null,
       dosageInstructions:
         'Spray for leaf vigour and fruit finish/shininess, 1-1.5 ml/L of water.',
+      audioPrompts: null,
     };
-
-    const audioPrompts = this.buildDosageAudioPrompts(
-      superstar.brandName,
-      superstar.dosageInstructions,
-    );
 
     return this.prisma.industryGoldenReference.upsert({
       where: { brandName: superstar.brandName },
-      update: { ...superstar, audioPrompts },
-      create: { ...superstar, audioPrompts },
+      update: { ...superstar },
+      create: { ...superstar },
     });
   }
 
@@ -208,31 +194,5 @@ export class AgroGuardTesterService {
 
     const confidence = Math.max(0, Math.min(1, 1 - deduction));
     return Math.round(confidence * 100) / 100;
-  }
-
-  /** Deterministic per-language spoken dosage clip URLs (simulated TTS). */
-  private buildDosageAudioPrompts(
-    brand: string,
-    dosage: string,
-  ): Record<string, string> {
-    const prompts: Record<string, string> = {};
-    for (const lang of SPOKEN_LANGUAGES) {
-      const hash = createHash('sha1')
-        .update(`${lang}|${brand}|${dosage}`)
-        .digest('hex')
-        .slice(0, 12);
-      prompts[lang] =
-        `https://cdn.mock.local/tts/agroguard/${lang.toLowerCase()}/${brand.toLowerCase()}-${hash}.mp3`;
-    }
-    return prompts;
-  }
-
-  /** Mock object-storage upload for a scanned bottle — no real network I/O. */
-  private simulateBottleUpload(
-    testerProfileId: string,
-    file: Express.Multer.File,
-  ): string {
-    const safeName = (file.originalname ?? 'bottle').replace(/[^\w.-]/g, '_');
-    return `https://s3.mock.local/agroguard/${testerProfileId}/${randomUUID()}-${safeName}`;
   }
 }

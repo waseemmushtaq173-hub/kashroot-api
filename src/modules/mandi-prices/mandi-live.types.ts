@@ -8,19 +8,17 @@
 /**
  * Where a set of prices actually came from.
  *
- * This travels on every response instead of being inferred by the client,
- * because the two feeds are not interchangeable: `agmarknet` rows are published
- * daily arrival prices from real regulated market boards, while `simulated` rows
- * are generated locally for hubs that no upstream feed covers. A price board is
- * read as a price board, so the distinction has to survive the trip to screen.
+ * Only `agmarknet` exists now: prices are published daily arrival prices from
+ * real regulated market boards. The distinction travels on every response so
+ * the client can show provenance.
  */
-export type PriceSource = 'agmarknet' | 'simulated';
+export type PriceSource = 'agmarknet';
 
 /** Sale unit a price is quoted in. Agmarknet publishes per quintal (100 kg). */
 export type PriceUnit = 'quintal' | 'kg';
 
 /** Whether an upstream price feed publishes for a hub's state. */
-export type HubCoverage = 'live' | 'modelled';
+export type HubCoverage = 'live';
 
 /** One selectable market hub the feed can resolve a request to. */
 export interface MandiHub {
@@ -29,10 +27,9 @@ export interface MandiHub {
   label: string;
   state: string;
   /**
-   * The exact state string the upstream feed indexes by. Only meaningful when
-   * `coverage` is 'live'; null otherwise.
+   * The exact state string the upstream feed indexes by.
    */
-  upstreamState: string | null;
+  upstreamState: string;
   /** Roughly the hub's trading centre — accurate enough to pick a state. */
   lat: number;
   lng: number;
@@ -41,18 +38,10 @@ export interface MandiHub {
   markets: string[];
 }
 
-/** A commodity the feed can be asked for, with the anchor its series derives from. */
+/** A commodity the feed can be asked for. */
 export interface MandiCommodity {
   name: string;
   unit: PriceUnit;
-  /**
-   * Illustrative wholesale anchor, in rupees. Used ONLY by the simulated
-   * provider to centre a generated series — it is not ingested data and is
-   * never served on a hub that has live coverage.
-   */
-  basePrice: number;
-  /** Fractional day-to-day swing the generator applies around the trend. */
-  volatility: number;
 }
 
 /** One market board's reading for one commodity. */
@@ -80,7 +69,7 @@ export interface TrendPoint {
   dataPoints: number;
 }
 
-/** A source of mandi prices. Two implementations, selected by hub coverage. */
+/** A source of mandi prices. The Agmarknet provider is the only implementation. */
 export interface MandiProvider {
   readonly source: PriceSource;
   /** Shown in the UI's provenance line. */
@@ -130,8 +119,8 @@ export interface LiveMandiFeed {
   /**
    * Set when the feed could not be served exactly as asked — currently only
    * when a live hub has no published rows for the requested commodity. Null on
-   * every successful serve. The feed is never back-filled with generated rows
-   * to hide this; an empty board reports itself as empty.
+   * every successful serve. An empty board reports itself as empty; no
+   * generated rows are ever substituted.
    */
   note: string | null;
 }

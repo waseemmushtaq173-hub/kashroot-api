@@ -12,17 +12,8 @@ const TREND_VISUALS: Record<TrendIndicator, { arrow: string; color: string }> = 
   [TrendIndicator.STABLE]: { arrow: '—', color: 'grey' },
 };
 
-/** One row as reported by an official APMC daily bulletin. */
-interface ApmcBulletinRecord {
-  mandiName: string;
-  commodity: string;
-  variety?: string;
-  minPrice: number;
-  maxPrice: number;
-  modalPrice: number;
-  unitOfSale: string;
-  recordedAt: Date;
-}
+/** Per-language audio prompt URL base (configured per deployment). No mock CDN. */
+const AUDIO_BASE = process.env.MANDI_AUDIO_BASE_URL?.trim() || '';
 
 @Injectable()
 export class MandiPricesService {
@@ -114,10 +105,6 @@ export class MandiPricesService {
         mandiName: input.mandiName,
         commodity: input.commodity,
         variety: input.variety,
-        minPrice,
-        maxPrice,
-        modalPrice,
-        unitOfSale: input.unitOfSale,
         recordedAt,
       }) as Prisma.InputJsonValue,
       recordedAt,
@@ -189,43 +176,15 @@ export class MandiPricesService {
   }
 
   /**
-   * Ingest the official Agmarknet / APMC daily bulletin. Real deployments would
-   * pull from the Agmarknet API or the Directorate of Horticulture J&K feed;
-   * here we mock a representative bulletin so the pipeline is exercised end-to-end.
+   * Ingest the official Agmarknet / APMC daily bulletin. No upstream feed is
+   * configured for this deployment, so nothing is ingested. Returns zero so the
+   * admin dashboard can show that the sync ran but no records were available.
+   * Prices enter the system only through POST /api/v1/mandi-prices by a
+   * verified market reporter, or through a configured upstream feed.
    */
   async syncOfficialApmcData(): Promise<{ synced: number }> {
-    const bulletin = this.mockOfficialBulletin();
-    let synced = 0;
-
-    for (const record of bulletin) {
-      // Trend is derived from the prior APMC benchmark, not any marketplace rate.
-      const trendIndicator = await this.computeTrend(
-        record.mandiName,
-        record.commodity,
-        record.modalPrice,
-        record.recordedAt,
-      );
-
-      await this.prisma.mandiPrice.create({
-        data: {
-          mandiName: record.mandiName,
-          commodity: record.commodity,
-          variety: record.variety ?? null,
-          minPrice: record.minPrice,
-          maxPrice: record.maxPrice,
-          modalPrice: record.modalPrice,
-          unitOfSale: record.unitOfSale,
-          currency: 'INR',
-          trendIndicator,
-          audioPrompts: this.buildAudioPrompts(record) as Prisma.InputJsonValue,
-          recordedAt: record.recordedAt,
-        },
-      });
-      synced += 1;
-    }
-
-    this.logger.log(`Synced ${synced} official APMC benchmark record(s).`);
-    return { synced };
+    this.logger.log('No official APMC bulletin feed is configured; nothing ingested.');
+    return { synced: 0 };
   }
 
   /**
@@ -255,29 +214,25 @@ export class MandiPricesService {
   /**
    * Prepare per-language audio prompt URLs for the voice-first client. The actual
    * TTS synthesis/upload is handled by the audio pipeline; this wires the map shape.
+   * No mock CDN URLs are generated.
    */
-  private buildAudioPrompts(record: ApmcBulletinRecord): Record<string, string> {
+  private buildAudioPrompts(record: {
+    mandiName: string;
+    commodity: string;
+    variety: string | null;
+    recordedAt: Date;
+  }): Record<string, string> {
     const slug = `${record.mandiName}-${record.commodity}-${record.recordedAt
       .toISOString()
       .slice(0, 10)}`
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '');
-    const base = 'https://cdn.mock.local/mandi-audio';
+    const base = AUDIO_BASE ? `${AUDIO_BASE}/` : '';
     return {
-      KASHMIRI: `${base}/ks/${slug}.mp3`,
-      URDU: `${base}/ur/${slug}.mp3`,
-      HINDI: `${base}/hi/${slug}.mp3`,
+      KASHMIRI: `${base}ks/${slug}.mp3`,
+      URDU: `${base}ur/${slug}.mp3`,
+      HINDI: `${base}hi/${slug}.mp3`,
     };
-  }
-
-  /** Stand-in for the official bulletin ingest (Sopore / Parimpora / Narwal). */
-  private mockOfficialBulletin(): ApmcBulletinRecord[] {
-    const today = new Date();
-    return [
-      { mandiName: 'Sopore Fruit Mandi', commodity: 'Apple - Delicious', variety: 'Delicious', minPrice: 1100, maxPrice: 1800, modalPrice: 1450, unitOfSale: 'box', recordedAt: today },
-      { mandiName: 'Parimpora Fruit Mandi', commodity: 'Apple - Kullu', variety: 'Kullu', minPrice: 900, maxPrice: 1600, modalPrice: 1250, unitOfSale: 'box', recordedAt: today },
-      { mandiName: 'Narwal Mandi', commodity: 'Walnut', minPrice: 400, maxPrice: 750, modalPrice: 600, unitOfSale: 'kg', recordedAt: today },
-    ];
   }
 }

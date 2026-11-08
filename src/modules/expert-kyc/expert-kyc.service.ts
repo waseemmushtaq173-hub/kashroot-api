@@ -1,5 +1,4 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { randomUUID } from 'crypto';
 import { VerificationStatus } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
@@ -30,25 +29,11 @@ export class ExpertKycService {
       throw new NotFoundException('Expert profile not found for this user.');
     }
 
-    // Simulate an S3 upload — swap for a real StorageService later.
-    const documentUrl = this.simulateS3Upload(expertProfile.id, input.file);
-
-    // Persist the document and reset the profile to PENDING atomically.
-    const [document] = await this.prisma.$transaction([
-      this.prisma.expertKycDocument.create({
-        data: {
-          expertProfile: { connect: { id: expertProfile.id } },
-          documentUrl,
-          documentType: input.documentType,
-        },
-      }),
-      this.prisma.expertProfile.update({
-        where: { id: expertProfile.id },
-        data: { verificationStatus: VerificationStatus.PENDING },
-      }),
-    ]);
-
-    return { document, verificationStatus: VerificationStatus.PENDING };
+    // No object-storage provider is configured: KYC document uploads cannot be
+    // persisted until a real StorageService (S3 / signed URLs) is wired up.
+    throw new Error(
+      'KYC document upload is not configured on this site. No object-storage provider is set up.',
+    );
   }
 
   // ─── Admin moderation ──────────────────────────────────────────────
@@ -109,11 +94,5 @@ export class ExpertKycService {
     ]);
 
     return { document: reviewedDocument, verificationStatus: expertProfile.verificationStatus };
-  }
-
-  /** Mock object-storage upload — returns a stand-in URL, no real network I/O. */
-  private simulateS3Upload(expertProfileId: string, file: Express.Multer.File): string {
-    const safeName = (file.originalname ?? 'document').replace(/[^\w.-]/g, '_');
-    return `https://s3.mock.local/expert-kyc/${expertProfileId}/${randomUUID()}-${safeName}`;
   }
 }

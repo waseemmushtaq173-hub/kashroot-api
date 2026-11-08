@@ -1,18 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { createHash } from 'crypto';
 import { AdvisoryCategory, FarmingAdvisory, PreferredLanguage, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAdvisoryDto } from './dto/create-advisory.dto';
 import { QueryAdvisoryDto } from './dto/query-advisory.dto';
-
-/** All spoken languages we pre-render advisory clips for. */
-const ALL_LANGUAGES: PreferredLanguage[] = [
-  PreferredLanguage.KASHMIRI,
-  PreferredLanguage.URDU,
-  PreferredLanguage.HINDI,
-  PreferredLanguage.ENGLISH,
-];
 
 /**
  * Keyword → category hints, used both to route free-text farmer questions to the
@@ -52,9 +43,8 @@ export class AdvisoryService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Author one verified advisory, rendering its per-language spoken clips. */
+  /** Author one verified advisory. No synthetic audio prompts are generated. */
   async createAdvisory(dto: CreateAdvisoryDto): Promise<FarmingAdvisory> {
-    const audioPrompts = this.buildAudioPrompts(dto.topic, dto.content);
     return this.prisma.farmingAdvisory.create({
       data: {
         topic: dto.topic,
@@ -65,7 +55,7 @@ export class AdvisoryService {
         isGovVerified: dto.isGovVerified ?? false,
         sourceOrganization: dto.sourceOrganization,
         sourceUrl: dto.sourceUrl ?? null,
-        audioPrompts: audioPrompts as unknown as Prisma.InputJsonObject,
+        audioPrompts: null,
       },
     });
   }
@@ -84,7 +74,6 @@ export class AdvisoryService {
     sourceOrganization: string;
     sourceUrl?: string | null;
   }): Promise<{ advisory: FarmingAdvisory; created: boolean }> {
-    const audioPrompts = this.buildAudioPrompts(input.topic, input.content);
     const existing = await this.prisma.farmingAdvisory.findFirst({
       where: { topic: input.topic },
       select: { id: true },
@@ -98,7 +87,7 @@ export class AdvisoryService {
       isGovVerified: true,
       sourceOrganization: input.sourceOrganization,
       sourceUrl: input.sourceUrl ?? null,
-      audioPrompts: audioPrompts as unknown as Prisma.InputJsonObject,
+      audioPrompts: null,
     };
 
     if (existing) {
@@ -183,114 +172,5 @@ export class AdvisoryService {
     }
     return score;
   }
-
-  // --- spoken clip synthesis (deterministic mock; Bhashini/Coqui later) ------
-
-  /**
-   * Render one pre-rendered spoken clip URL per language for an advisory. Keyed
-   * by language + a hash of topic|content so identical advisories map to a
-   * stable clip. Real implementation POSTs the text to Bhashini TTS per language.
-   */
-  private buildAudioPrompts(topic: string, content: string): Record<PreferredLanguage, string> {
-    const prompts = {} as Record<PreferredLanguage, string>;
-    for (const lang of ALL_LANGUAGES) {
-      const clipId = createHash('sha1')
-        .update(`${lang}:${topic}:${content}`)
-        .digest('hex')
-        .slice(0, 16);
-      prompts[lang] = `https://cdn.mock.local/tts/advisory/${lang.toLowerCase()}/${clipId}.mp3`;
-    }
-    return prompts;
-  }
-
-  // --- seeding ----------------------------------------------------------
-
-  /**
-   * Seed the knowledge base with verified J&K horticulture advisories (Apple
-   * scab spray schedule, Superstar/GA3 leaf-shine foliar, high-density planting,
-   * soil nutrition). Idempotent: skips topics already present. Returns how many
-   * new advisories were created.
-   */
-  async seedInitialAdvisories(): Promise<{ created: number; skipped: number }> {
-    const seeds: CreateAdvisoryDto[] = [
-      {
-        topic: 'Apple Scab Spray Schedule (Green Tip to Pink Bud)',
-        category: AdvisoryCategory.SPRAY_SCHEDULE,
-        content:
-          'Apple scab is the most damaging apple disease in Kashmir. Start protective ' +
-          'sprays at green-tip: Mancozeb 75% WP at 3 g per litre of water. Repeat at ' +
-          'pink-bud and petal-fall, and again after every heavy rain. Do not wait for ' +
-          'spots to appear — scab spreads fastest in cool, wet spring weather.',
-        applicableCrops: ['Apple'],
-        applicableRegions: ['Sopore', 'Shopian', 'Baramulla', 'Anantnag'],
-        sourceOrganization: 'SKUAST-Kashmir',
-      },
-      {
-        topic: 'Superstar (GA3) Leaf-Shine Foliar Spray',
-        category: AdvisoryCategory.SPRAY_SCHEDULE,
-        content:
-          'For leaf vigour and fruit finish/shininess, spray genuine Superstar ' +
-          '(Gibberellic Acid GA3 1.8%) at 1 to 1.5 ml per litre of water. Use only ' +
-          'factory-verified bottles — counterfeit agency stock is common. Spray in the ' +
-          'cool morning and never exceed the labelled dose.',
-        applicableCrops: ['Apple'],
-        applicableRegions: ['Sopore', 'Shopian'],
-        sourceOrganization: 'FIL Industries / SKUAST-Kashmir',
-      },
-      {
-        topic: 'San Jose Scale and Mite Control',
-        category: AdvisoryCategory.DISEASE_PEST,
-        content:
-          'For San Jose scale, apply horticultural mineral oil (HMO) at the delayed ' +
-          'dormant stage before bud burst. For European red mite in summer, use an ' +
-          'approved miticide only when mites cross the threshold, and rotate chemistry ' +
-          'to avoid resistance.',
-        applicableCrops: ['Apple', 'Pear', 'Cherry'],
-        applicableRegions: ['Baramulla', 'Anantnag'],
-        sourceOrganization: 'SKUAST-Kashmir Division of Entomology',
-      },
-      {
-        topic: 'High-Density Apple Planting (Modern Orchard)',
-        category: AdvisoryCategory.MODERN_TECH,
-        content:
-          'High-density plantation on dwarfing rootstock (M9/MM106) with a trellis and ' +
-          'drip irrigation gives earlier bearing and higher per-hectare yield than ' +
-          'traditional orchards. Plant spindle-trained trees, maintain a central leader, ' +
-          'and prune lightly every year to keep the canopy open to light.',
-        applicableCrops: ['Apple'],
-        applicableRegions: ['Shopian', 'Sopore'],
-        sourceOrganization: 'SKUAST-Kashmir High-Density Plantation Programme',
-      },
-      {
-        topic: 'Balanced Orchard Soil Nutrition',
-        category: AdvisoryCategory.FERTILIZER_SOIL,
-        content:
-          'Apply farmyard manure in winter and split nitrogen (urea) into two doses — ' +
-          'one before flowering and one after fruit set. Get a soil test every two to ' +
-          'three years and add potash and micronutrients (boron, zinc) based on the ' +
-          'report rather than guesswork. Over-use of nitrogen delays fruit colouring.',
-        applicableCrops: ['Apple', 'Walnut'],
-        applicableRegions: ['Sopore', 'Anantnag', 'Baramulla'],
-        sourceOrganization: 'J&K Department of Agriculture',
-      },
-    ];
-
-    let created = 0;
-    let skipped = 0;
-    for (const seed of seeds) {
-      const exists = await this.prisma.farmingAdvisory.findFirst({
-        where: { topic: seed.topic },
-        select: { id: true },
-      });
-      if (exists) {
-        skipped += 1;
-        continue;
-      }
-      await this.createAdvisory(seed);
-      created += 1;
-    }
-
-    this.logger.log(`Advisory seed complete: ${created} created, ${skipped} skipped`);
-    return { created, skipped };
-  }
 }
+

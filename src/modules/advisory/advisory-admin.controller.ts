@@ -34,14 +34,6 @@ export class AdvisoryAdminController {
     return this.advisory.createAdvisory(dto);
   }
 
-  /** POST /api/v1/admin/advisories/seed — seed the baseline J&K advisories. */
-  @Post('seed')
-  @HttpCode(200)
-  @ApiOperation({ summary: 'Seed baseline SKUAST-K advisories (ADMIN/EXPERT)' })
-  seed() {
-    return this.advisory.seedInitialAdvisories();
-  }
-
   /**
    * POST /api/v1/admin/advisories/sync — manually trigger a live pull of the
    * latest official government advisories (also runs nightly on a Cron).

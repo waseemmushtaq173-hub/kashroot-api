@@ -9,26 +9,14 @@ import type { MandiCommodity, MandiHub } from './mandi-live.types';
  * selector and the coordinate lookup are driven by one list, and so the
  * `coverage` flag below cannot drift out of sync with what the API actually
  * knows how to fetch.
+ *
+ * Every hub is `coverage: 'live'`: each attempts to fetch from the configured
+ * Agmarknet upstream. When the upstream carries no published rows for a state,
+ * the board is returned empty with an honest message — no generated prices are
+ * ever substituted.
  */
 
-/**
- * The market hubs the feed can resolve to.
- *
- * `coverage` is the important column. 'live' means an upstream Agmarknet feed
- * publishes daily board prices for that state; 'modelled' means nothing
- * upstream covers it and the simulated provider answers instead. Seven of these
- * hubs are 'modelled' today — including Srinagar, Azadpur and Jaipur, the three
- * boards this product cares about most — because the public feed carries only
- * five states and none of them are those. Recording that here rather than
- * guessing at runtime is what stops a generated series being served under a
- * live label.
- *
- * Coordinates are city/trading-centre approximations. They only ever need to be
- * accurate enough to pick the right state from a browser fix, so a few
- * kilometres of drift is harmless.
- */
 export const MANDI_HUBS: readonly MandiHub[] = [
-  // ── Hubs with real upstream coverage ─────────────────────────────────────
   {
     id: 'punjab',
     label: 'Punjab — Ludhiana & Amritsar',
@@ -79,99 +67,95 @@ export const MANDI_HUBS: readonly MandiHub[] = [
     coverage: 'live',
     markets: ['Yeshwanthpur APMC', 'Binny Mill Yard'],
   },
-
-  // ── Hubs with no upstream coverage ───────────────────────────────────────
   {
     id: 'jammu-kashmir',
     label: 'Jammu & Kashmir — Srinagar',
     state: 'Jammu & Kashmir',
-    upstreamState: null,
+    upstreamState: 'Jammu & Kashmir',
     lat: 34.0837,
     lng: 74.7973,
-    coverage: 'modelled',
+    coverage: 'live',
     markets: ['Parimpora Fruit Mandi', 'Sopore Fruit Mandi', 'Narwal Mandi'],
   },
   {
     id: 'delhi',
     label: 'Delhi — Azadpur',
     state: 'Delhi',
-    upstreamState: null,
+    upstreamState: 'Delhi',
     lat: 28.7041,
     lng: 77.1025,
-    coverage: 'modelled',
+    coverage: 'live',
     markets: ['Azadpur Mandi'],
   },
   {
     id: 'rajasthan',
     label: 'Rajasthan — Jaipur',
     state: 'Rajasthan',
-    upstreamState: null,
+    upstreamState: 'Rajasthan',
     lat: 26.9124,
     lng: 75.7873,
-    coverage: 'modelled',
+    coverage: 'live',
     markets: ['Jaipur Muhana Mandi'],
   },
   {
     id: 'himachal-pradesh',
     label: 'Himachal Pradesh — Shimla',
     state: 'Himachal Pradesh',
-    upstreamState: null,
+    upstreamState: 'Himachal Pradesh',
     lat: 31.1048,
     lng: 77.1734,
-    coverage: 'modelled',
+    coverage: 'live',
     markets: ['Shimla Dhalli Mandi'],
   },
   {
     id: 'haryana',
     label: 'Haryana — Karnal',
     state: 'Haryana',
-    upstreamState: null,
+    upstreamState: 'Haryana',
     lat: 29.6857,
     lng: 76.9905,
-    coverage: 'modelled',
+    coverage: 'live',
     markets: ['Karnal APMC'],
   },
   {
     id: 'gujarat',
     label: 'Gujarat — Ahmedabad',
     state: 'Gujarat',
-    upstreamState: null,
+    upstreamState: 'Gujarat',
     lat: 23.0225,
     lng: 72.5714,
-    coverage: 'modelled',
+    coverage: 'live',
     markets: ['Ahmedabad Jamalpur Mandi'],
   },
   {
     id: 'uttarakhand',
     label: 'Uttarakhand — Dehradun',
     state: 'Uttarakhand',
-    upstreamState: null,
+    upstreamState: 'Uttarakhand',
     lat: 30.3165,
     lng: 78.0322,
-    coverage: 'modelled',
+    coverage: 'live',
     markets: ['Dehradun Mandi'],
   },
 ];
 
 /**
- * Commodities the feed accepts, with the anchor the simulated provider centres
- * its series on.
+ * Commodities the feed accepts.
  *
- * The anchors are illustrative wholesale levels in rupees, chosen to sit in the
- * right order of magnitude so a demo reads plausibly; they are not harvested
- * from anywhere. They are only ever consulted for hubs with `modelled`
- * coverage — a live hub's prices come from the upstream feed in full.
+ * These are the crop names the upstream Agmarknet feed indexes by. No anchor
+ * prices or volatility figures are stored here — prices come exclusively from
+ * live upstream records or from verified reporter submissions.
  */
 export const MANDI_COMMODITIES: readonly MandiCommodity[] = [
-  { name: 'Apple', unit: 'quintal', basePrice: 5500, volatility: 0.18 },
-  { name: 'Walnut', unit: 'quintal', basePrice: 14000, volatility: 0.15 },
-  { name: 'Saffron', unit: 'kg', basePrice: 265000, volatility: 0.1 },
-  { name: 'Cherry', unit: 'quintal', basePrice: 9000, volatility: 0.2 },
-  { name: 'Pear', unit: 'quintal', basePrice: 4200, volatility: 0.16 },
-  { name: 'Honey', unit: 'kg', basePrice: 420, volatility: 0.12 },
-  { name: 'Onion', unit: 'quintal', basePrice: 1800, volatility: 0.25 },
-  { name: 'Potato', unit: 'quintal', basePrice: 1350, volatility: 0.2 },
-  { name: 'Tomato', unit: 'quintal', basePrice: 2300, volatility: 0.3 },
+  { name: 'Apple', unit: 'quintal' },
+  { name: 'Walnut', unit: 'quintal' },
+  { name: 'Saffron', unit: 'kg' },
+  { name: 'Cherry', unit: 'quintal' },
+  { name: 'Pear', unit: 'quintal' },
+  { name: 'Honey', unit: 'kg' },
+  { name: 'Onion', unit: 'quintal' },
+  { name: 'Potato', unit: 'quintal' },
+  { name: 'Tomato', unit: 'quintal' },
 ];
 
 /** The commodity served when a request names none. */

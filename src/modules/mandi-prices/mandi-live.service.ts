@@ -17,7 +17,6 @@ import type {
   TrendPoint,
 } from './mandi-live.types';
 import { AgmarknetProvider } from './providers/agmarknet.provider';
-import { SimulatedProvider } from './providers/simulated.provider';
 import { QueryLiveMandiDto } from './dto/query-live-mandi.dto';
 
 /** How a hub was chosen for a request. */
@@ -73,10 +72,7 @@ export class MandiLiveService {
   private static readonly CACHE_TTL_MS = 60_000;
   private static readonly CACHE_MAX_ENTRIES = 64;
 
-  constructor(
-    private readonly agmarknet: AgmarknetProvider,
-    private readonly simulated: SimulatedProvider,
-  ) {}
+  constructor(private readonly agmarknet: AgmarknetProvider) {}
 
   /** Everything the location selector needs, in one round trip. */
   listLocations(): MandiLocationCatalogue {
@@ -141,15 +137,14 @@ export class MandiLiveService {
     commodityName: string,
     cacheKey: string,
   ): Promise<CachedPayload> {
-    const provider = this.providerFor(hub);
-
-    const { quotes, note } = await this.fetchQuotes(provider, hub, commodityName);
-    const history = await this.fetchHistory(provider, hub, commodityName);
+    const { quotes, note } = await this.fetchQuotes(hub, commodityName);
+    const history = await this.fetchHistory(hub, commodityName);
 
     const payload: CachedPayload = {
       commodity: commodityName,
-      source: provider.source,
-      attribution: provider.attribution,
+      source: 'agmarknet',
+      attribution:
+        'Agmarknet daily arrivals (Directorate of Marketing & Inspection), via the public Mandi Price API mirror',
       unitOfSale:
         quotes[0]?.unitOfSale ?? findCommodity(commodityName)?.unit ?? 'quintal',
       currency: 'INR',
@@ -166,57 +161,27 @@ export class MandiLiveService {
   }
 
   /**
-   * The provider that answers for a hub.
-   *
-   * Coverage is a property of the hub's state, not of whether the last request
-   * happened to succeed, so this decision does not move around at runtime.
-   */
-  private providerFor(hub: MandiHub): MandiProvider {
-    return hub.coverage === 'live' ? this.agmarknet : this.simulated;
-  }
-
-  /**
    * Fetch the boards for a hub.
    *
-   * A live hub that cannot be read yields no rows and an explanation; a
-   * modelled hub always yields rows, because that is what it is for.
+   * A live hub that cannot be read yields no rows and an explanation; the board
+   * is left empty rather than filled in with invented numbers.
    */
   private async fetchQuotes(
-    provider: MandiProvider,
     hub: MandiHub,
     commodity: string,
   ): Promise<{ quotes: MandiQuote[]; note: string | null }> {
     try {
-      const quotes = await provider.fetchQuotes(hub, commodity);
+      const quotes = await this.agmarknet.fetchQuotes(hub, commodity);
 
       if (quotes.length > 0) return { quotes, note: null };
 
-      if (hub.coverage === 'modelled') {
-        // The generator always returns one card per board, so this is
-        // unreachable in practice; it is here so the branch cannot silently
-        // return "no data" for a hub that is supposed to have some.
-        return {
-          quotes: [],
-          note: `No modelled prices are available for ${commodity} at ${hub.label}.`,
-        };
-      }
-
       return {
         quotes: [],
-        note: `The Agmarknet feed carries no published ${commodity} arrivals for ${hub.state} at the moment. The board is left empty rather than filled in.`,
+        note: `No published ${commodity} arrivals for ${hub.state} at the moment. The board is left empty rather than filled in.`,
       };
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       this.logger.warn(`Mandi feed unavailable for ${hub.id}: ${reason}`);
-
-      if (hub.coverage === 'modelled') {
-        // Should not happen — the generator does no I/O — but falling through
-        // to a real error beats rendering a blank screen with no explanation.
-        return {
-          quotes: [],
-          note: `The modelled feed for ${hub.label} could not be generated.`,
-        };
-      }
 
       return {
         quotes: [],
@@ -227,12 +192,11 @@ export class MandiLiveService {
 
   /** History degrades to an empty series; the board itself is the point. */
   private async fetchHistory(
-    provider: MandiProvider,
     hub: MandiHub,
     commodity: string,
   ): Promise<TrendPoint[]> {
     try {
-      return await provider.fetchHistory(hub, commodity);
+      return await this.agmarknet.fetchHistory(hub, commodity);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       this.logger.warn(`Mandi history unavailable for ${hub.id}: ${reason}`);
@@ -266,7 +230,7 @@ export class MandiLiveService {
     // Half a coordinate pair is a malformed request, not a location. Letting it
     // through would silently resolve against a zero for the missing half.
     if (lat === null || lng === null) {
-      if (lat !== null || lng !== null) {
+      if (lat !== null || lng === null) {
         throw new BadRequestException(
           'Supply `lat` and `lng` together, or name a `location`.',
         );

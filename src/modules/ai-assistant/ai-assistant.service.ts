@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHash } from 'crypto';
 import {
   OrderStatus,
   PreferredLanguage,
@@ -138,36 +137,17 @@ export class AiAssistantService {
     mimeType: string,
     language: PreferredLanguage,
   ): Promise<string> {
-    if (this.bhashiniApiKey && this.bhashiniAsrUrl) {
-      try {
-        return await this.bhashiniAsr(audio, mimeType, language);
-      } catch (err) {
-        this.logger.warn(
-          `[STT] Bhashini ASR failed, falling back to simulation: ${(err as Error).message}`,
-        );
-      }
+    if (!this.bhashiniApiKey || !this.bhashiniAsrUrl) {
+      throw new Error('Speech-to-text is not configured on this site. Set BHASHINI_API_KEY and BHASHINI_ASR_URL.');
     }
-    return this.speechToTextSimulated(audio, mimeType, language);
-  }
-
-  /** Deterministic offline stand-in, used until BHASHINI_ASR_URL is configured. */
-  private speechToTextSimulated(
-    audio: Buffer,
-    mimeType: string,
-    language: PreferredLanguage,
-  ): string {
-    this.logger.debug(
-      `[STT] simulating Bhashini ASR: ${audio.length} bytes, ${mimeType}, lang=${language}`,
-    );
-
-    // Placeholder utterances the mock ASR can "hear" (English gloss of the
-    // farmer's speech). Real Bhashini returns text in the source language.
-    const utterances = [
-      'What is the mandi rate for apple today?',
-      'Tell me the weather forecast for my region.',
-      'How do I list my walnut harvest for sale?',
-    ];
-    return utterances[audio.length % utterances.length];
+    try {
+      return await this.bhashiniAsr(audio, mimeType, language);
+    } catch (err) {
+      this.logger.warn(
+        `[STT] Bhashini ASR failed: ${(err as Error).message}`,
+      );
+      throw err;
+    }
   }
 
   /**
@@ -178,55 +158,17 @@ export class AiAssistantService {
    * and compose the reply — the "prompt wrapper" a real model would receive.
    */
   private async askAssistant(transcript: string, context: FarmerContext): Promise<string> {
-    if (this.llmApiKey) {
-      try {
-        return await this.llmReply(transcript, context);
-      } catch (err) {
-        this.logger.warn(
-          `[LLM] live model call failed, falling back to grounded router: ${(err as Error).message}`,
-        );
-      }
+    if (!this.llmApiKey) {
+      throw new Error('Language model is not configured on this site. Set LLM_API_KEY.');
     }
-    return this.askAssistantSimulated(transcript, context);
-  }
-
-  /**
-   * Deterministic grounded router — the offline stand-in used until LLM_API_KEY
-   * is configured, and the fallback whenever a live model call fails.
-   */
-  private async askAssistantSimulated(transcript: string, context: FarmerContext): Promise<string> {
-    this.logger.debug(
-      `[LLM] simulating local model for farmer=${context.farmerProfileId ?? 'unknown'}, ` +
-        `region=${context.regionId ?? 'unknown'}, lang=${context.language}`,
-    );
-
-    const q = transcript.toLowerCase();
-
-    // Agronomy knowledge base — checked first so specific farming questions
-    // ("how do I spray for scab?") are grounded in verified advisories rather
-    // than swallowed by the broader intents below. Keywords include Hindi/Urdu/
-    // Kashmiri transliterations a voice transcript may carry.
-    if (
-      /\b(spray|disease|scab|prune|pruning|fungicide|fertilizer|fertiliser|pest|bimari|dawa|koshur|leaf)\b/.test(
-        q,
-      )
-    ) {
-      return this.answerAgronomy(transcript, context);
+    try {
+      return await this.llmReply(transcript, context);
+    } catch (err) {
+      this.logger.warn(
+        `[LLM] live model call failed: ${(err as Error).message}`,
+      );
+      throw err;
     }
-    if (/\b(mandi|price|rate|bhaav|daam)\b/.test(q)) {
-      return this.answerMandiPrices(context);
-    }
-    if (/\b(weather|rain|snow|storm|forecast|mausam)\b/.test(q)) {
-      return this.answerWeather(context);
-    }
-    if (/\b(order|orders|shipment|delivery|parcel|consignment)\b/.test(q)) {
-      return this.answerActiveOrders(context);
-    }
-
-    return (
-      "I can help with today's mandi prices, the weather forecast, or your " +
-      'active orders. Please say "mandi", "weather", or "orders".'
-    );
   }
 
   /**
@@ -370,31 +312,18 @@ export class AiAssistantService {
       : `${amount.toLocaleString('en-IN')} ${currency}`;
   }
 
-  /**
-   * Bhashini TTS simulation. A real call synthesizes `text` into speech in
-   * `language` (Coqui as the self-hosted fallback), uploads the clip to object
-   * storage, and returns a playable URL. We return a deterministic mock URL,
-   * keyed by language + a hash of the text so identical replies map to one clip.
-   */
   private async textToSpeech(text: string, language: PreferredLanguage): Promise<string> {
-    if (this.bhashiniApiKey && this.bhashiniTtsUrl) {
-      try {
-        return await this.bhashiniTts(text, language);
-      } catch (err) {
-        this.logger.warn(
-          `[TTS] Bhashini synthesis failed, falling back to simulation: ${(err as Error).message}`,
-        );
-      }
+    if (!this.bhashiniApiKey || !this.bhashiniTtsUrl) {
+      throw new Error('Text-to-speech is not configured on this site. Set BHASHINI_API_KEY and BHASHINI_TTS_URL.');
     }
-    return this.textToSpeechSimulated(text, language);
-  }
-
-  /** Deterministic offline stand-in, used until BHASHINI_TTS_URL is configured. */
-  private textToSpeechSimulated(text: string, language: PreferredLanguage): string {
-    const clipId = createHash('sha1').update(`${language}:${text}`).digest('hex').slice(0, 16);
-    this.logger.debug(`[TTS] simulating Bhashini synthesis: lang=${language}, clip=${clipId}`);
-
-    return `https://cdn.mock.local/tts/${language.toLowerCase()}/${clipId}.mp3`;
+    try {
+      return await this.bhashiniTts(text, language);
+    } catch (err) {
+      this.logger.warn(
+        `[TTS] Bhashini synthesis failed: ${(err as Error).message}`,
+      );
+      throw err;
+    }
   }
 
   // --- Live provider wrappers (used only when the matching env vars are set) ---

@@ -4,14 +4,10 @@ import {
   Post,
   Body,
   Req,
-  UploadedFile,
   UseGuards,
-  UseInterceptors,
-  ParseFilePipeBuilder,
   HttpCode,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiBearerAuth, ApiConsumes, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -40,21 +36,12 @@ export class AgroGuardTesterController {
   @Post('inspect')
   @HttpCode(200)
   @ApiOperation({ summary: 'Inspect an agency pesticide bottle (TESTER)' })
-  @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('bottleImage'))
   async inspect(
-    @UploadedFile(
-      new ParseFilePipeBuilder()
-        .addFileTypeValidator({ fileType: /image\/(png|jpe?g|webp)/ })
-        .addMaxSizeValidator({ maxSize: 10 * 1024 * 1024 }) // 10 MB
-        .build({ fileIsRequired: false }),
-    )
-    bottleImage: Express.Multer.File | undefined,
     @Body() dto: InspectAgencyProductDto,
     @Req() req: any,
   ) {
     const testerProfileId = await this.tester.resolveTesterProfileId(req.user.sub);
-    return this.tester.compareAgencyProduct(testerProfileId, { ...dto, bottleImage });
+    return this.tester.compareAgencyProduct(testerProfileId, dto);
   }
 
   /** GET /api/v1/tester/history — past agency audits for this tester. */
