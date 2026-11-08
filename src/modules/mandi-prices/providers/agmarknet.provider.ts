@@ -50,21 +50,25 @@ const DEFAULT_BASE_URL = 'https://mandi-api.onrender.com/v1';
 /**
  * Reads real daily mandi arrival prices from an Agmarknet-derived HTTP feed.
  *
- * The upstream is a public mirror of the Directorate of Marketing &
- * Inspection's daily board prices, addressed by state. It is a third party: it
- * is slow to wake, it rate-limits, and it carries only the states listed in
- * `MANDI_HUBS` with `coverage: 'live'`. Everything here is therefore written to
- * fail fast and loudly rather than to paper over an outage — the service above
- * turns a failure into an empty board that says so, never into substitute rows.
+ * The upstream is the official Government of India data.gov.in mandi resource
+ * ("Current Daily Price of Various Commodities from Various Markets (Mandi)"),
+ * addressed by state, called with DATA_GOV_IN_API_KEY (free at
+ * data.gov.in → My Account). It is a third party: it is slow to wake, it
+ * rate-limits, and it carries only the states listed in `MANDI_HUBS` with
+ * `coverage: 'live'`. Everything here is therefore written to fail fast and
+ * loudly rather than to paper over an outage — the service above turns a
+ * failure into an empty board that says so, never into substitute rows.
  *
- * Base URL comes from `MANDI_API_BASE_URL` so a deployment can point at
- * data.gov.in (which needs a key) or at its own cache without a code change.
+ * Base URL comes from `MANDI_API_BASE_URL` so a deployment can point at its own
+ * cache without a code change. `DATA_GOV_IN_API_KEY` and `AGMARKNET_API_KEY`
+ * are read and `.trim()`ed before every request so pasted keys with stray
+ * whitespace never cause 401/403.
  */
 @Injectable()
 export class AgmarknetProvider implements MandiProvider {
   readonly source: PriceSource = 'agmarknet';
   readonly attribution =
-    'Agmarknet daily arrivals (Directorate of Marketing & Inspection), via the public Mandi Price API mirror';
+    'Agmarknet daily arrivals (Directorate of Marketing & Inspection), via the Government of India data.gov.in API';
 
   private readonly logger = new Logger(AgmarknetProvider.name);
 
@@ -77,6 +81,21 @@ export class AgmarknetProvider implements MandiProvider {
   private static readonly TIMEOUT_MS = 8000;
 
   constructor(private readonly config: ConfigService) {}
+
+  /** data.gov.in resource id for the mandi prices feed. */
+  private get resourceId(): string {
+    return this.config.get<string>('OGD_MANDI_RESOURCE_ID')?.trim() ?? '9ef84268-d588-465a-a308-a864a43d0070';
+  }
+
+  /** Official OGD India API key, trimmed so pasted whitespace never breaks auth. */
+  private get apiKey(): string | null {
+    return this.config.get<string>('DATA_GOV_IN_API_KEY')?.trim() ?? null;
+  }
+
+  /** Alternate key name some deployments set. */
+  private get agmarknetKey(): string | null {
+    return this.config.get<string>('AGMARKNET_API_KEY')?.trim() ?? null;
+  }
 
   private get baseUrl(): string {
     // `.trim() || default` rather than `?? default`: a blank entry in an env
@@ -171,6 +190,8 @@ export class AgmarknetProvider implements MandiProvider {
     path: string,
     params: Record<string, string>,
   ): Promise<T[]> {
+    const key = this.apiKey ?? this.agmarknetKey;
+    if (key) params['api-key'] = key;
     const query = new URLSearchParams(params).toString();
     const url = `${this.baseUrl}${path}${query ? `?${query}` : ''}`;
 
@@ -186,6 +207,9 @@ export class AgmarknetProvider implements MandiProvider {
         signal: controller.signal,
       });
 
+      if (res.status === 401 || res.status === 403) {
+        throw new Error(`upstream responded ${res.status} ${res.statusText} (check DATA_GOV_IN_API_KEY)`);
+      }
       if (!res.ok) {
         throw new Error(`upstream responded ${res.status} ${res.statusText}`);
       }
